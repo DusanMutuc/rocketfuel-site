@@ -239,16 +239,34 @@ export default function ContactsTab() {
 
   return (
     <Box>
-      <Tabs
-        value={selectedTab}
-        onChange={(_, newVal) => setSelectedTab(newVal)}
-        textColor="primary"
-        indicatorColor="primary"
-      >
-        <Tab value="Prospect" label="Prospect" />
-        <Tab value="SOI" label="SOI" />
-        <Tab value="Agent" label="Agent" />
-      </Tabs>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
+  <Tabs
+    value={selectedTab}
+    onChange={(_, newVal) => setSelectedTab(newVal)}
+    textColor="primary"
+    indicatorColor="primary"
+  >
+    <Tab value="Prospect" label="Prospect" />
+    <Tab value="SOI" label="SOI" />
+    <Tab value="Agent" label="Agent" />
+  </Tabs>
+
+  <Button
+    variant="contained"
+    startIcon={<AddIcon />}
+    onClick={handleAdd}
+    sx={{
+      textTransform: 'none',
+      borderRadius: 2,
+      boxShadow: 2,
+      ml: 2,
+      fontSize: 16
+    }}
+  >
+    Add {selectedTab}
+  </Button>
+</Box>
+
 
       {loading && <CircularProgress sx={{ mt: 2 }} />}
       {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
@@ -305,13 +323,10 @@ export default function ContactsTab() {
         onSave={handleSaveAgent}
       />
 
-      <Fab
-        color="primary"
-        onClick={handleAdd}
-        sx={{ position: 'fixed', bottom: 32, right: 32 }}
-      >
-        <AddIcon />
-      </Fab>
+      <Box display="flex" justifyContent="flex-end" mt={3}>
+  
+</Box>
+
 
       <Snackbar
         open={!!snackbar}

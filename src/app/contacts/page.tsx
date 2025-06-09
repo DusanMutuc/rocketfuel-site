@@ -62,6 +62,7 @@ export default function ContactsPage() {
             startIcon={<AddIcon />}
             onClick={() => setIsAddOpen(true)}
             type="button"
+  sx={{ textTransform: 'none', fontSize: 16 }}
           >
             Add Prospect to Pipeline
           </Button>
