@@ -10,22 +10,15 @@ import {
   Box,
 } from '@mui/material';
 import { useState, useEffect } from 'react';
-
-type PipelineClient = {
-  client_id: string;
-  first_name: string;
-  last_name: string;
-  temperature: string;
-  pipeline_note: string;
-  pipeline_revenue: number;
-};
+import { PipelineClient } from '@/types';
 
 type Props = {
   open: boolean;
   onClose: () => void;
   client: PipelineClient | null;
-  onSave: (updated: EditableClient) => void;
+  onSave: (updated: PipelineClient) => void;
 };
+
 
 export default function EditPipelineModal({ open, onClose, client, onSave }: Props) {
   const [firstName, setFirstName] = useState('');

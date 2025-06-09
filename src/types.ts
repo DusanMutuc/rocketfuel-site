@@ -20,3 +20,13 @@ export interface Agent {
   notes?: string;
   original_contact?: string;
 }
+
+export interface PipelineClient {
+  client_id: string;
+  first_name: string;
+  last_name: string;
+  temperature: string;
+  pipeline_note: string;
+  pipeline_revenue: number;
+}
+
