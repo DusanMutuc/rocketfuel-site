@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { Suspense } from 'react';
 import {
   Box,
   Button,
@@ -73,6 +74,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
+     <Suspense fallback={<div>Loading...</div>}>
     <Container maxWidth="sm" sx={{ mt: 10 }}>
       <Paper elevation={3} sx={{ p: 4 }}>
         <Typography variant="h5" gutterBottom>
@@ -144,5 +146,6 @@ export default function ResetPasswordPage() {
         )}
       </Paper>
     </Container>
+    </Suspense>
   );
 }
