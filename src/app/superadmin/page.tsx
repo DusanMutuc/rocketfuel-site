@@ -10,6 +10,17 @@ import {
   Button,
   CircularProgress,
   Snackbar,
+  Tabs,
+  Tab,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Checkbox,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 
 const allowedEmails = ['dusanmutuc@gmail.com', 'other@example.com'];
@@ -17,42 +28,144 @@ const allowedEmails = ['dusanmutuc@gmail.com', 'other@example.com'];
 export default function SuperadminPage() {
   const [user, setUser] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [courses, setCourses] = useState<any[]>([]);
+  const [selectedTab, setSelectedTab] = useState(0);
+  const [loading, setLoading] = useState(true); // page-wide loading
+  const [courseLoading, setCourseLoading] = useState(false); // course fetch loading
   const [savingId, setSavingId] = useState<string | null>(null);
   const [snackbarMsg, setSnackbarMsg] = useState('');
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [courseUsers, setCourseUsers] = useState<any[]>([]);
+  const [showAddUserDialog, setShowAddUserDialog] = useState(false);
+  const [usersNotInCourse, setUsersNotInCourse] = useState<any[]>([]);
+  const [selectedAddUserId, setSelectedAddUserId] = useState<string | null>(null);
+  const [setAsActive, setSetAsActive] = useState<boolean>(false);
+  const [confirmToggleUser, setConfirmToggleUser] = useState<any | null>(null);
+const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
+const [newUserEmail, setNewUserEmail] = useState('');
+const [newFirstName, setNewFirstName] = useState('');
+const [newLastName, setNewLastName] = useState('');
+const [creatingUser, setCreatingUser] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
+      console.log('🔍 Fetching auth user...');
       const {
         data: { user },
+        error,
       } = await supabase.auth.getUser();
+
+      if (error) {
+        console.error('❌ Error fetching user:', error);
+      }
+
       setUser(user);
+      console.log('👤 Auth user:', user);
 
       if (user?.email && allowedEmails.includes(user.email)) {
-        fetchProfiles();
+        try {
+          console.log('✅ Email allowed. Fetching profiles and courses...');
+          await Promise.all([fetchProfiles(), fetchCourses()]);
+        } catch (err) {
+          console.error('❌ Error in fetchProfiles or fetchCourses:', err);
+        } finally {
+          setLoading(false); // ✅ guaranteed to run
+        }
       } else {
+        console.warn('🚫 Access denied or email not allowed');
         setLoading(false);
       }
     };
 
-    const fetchProfiles = async () => {
-       const { data, error } = await supabase.rpc('get_profiles_with_email');
-
-
-  console.log('📦 fetched profiles:', data);
-  console.error('❗ error fetching profiles:', error);
-
-  if (error) {
-    setLoading(false);
-    return;
-  }
-
-  setUsers(data || []);
-  setLoading(false);
-    };
-
     fetchUser();
   }, []);
+
+  const fetchProfiles = async () => {
+    console.log('📡 Fetching profiles...');
+    const { data, error } = await supabase.rpc('get_profiles_with_email');
+    if (!error) setUsers(data || []);
+  };
+
+  const fetchCourses = async () => {
+    console.log('📡 Fetching courses...');
+    const { data, error } = await supabase.from('courses').select('course_id, start_date');
+    if (!error) setCourses(data || []);
+  };
+
+  const fetchUsersInCourse = async (courseId: string) => {
+    setCourseLoading(true);
+    const { data: links, error: linksError } = await supabase
+      .from('user_courses')
+      .select('user_id, is_active')
+      .eq('course_id', courseId);
+
+    if (linksError) {
+      console.error('❌ Error fetching user_courses links:', linksError);
+      setCourseUsers([]);
+      setCourseLoading(false);
+      return;
+    }
+
+    const userIdMap: Record<string, boolean> = {};
+    for (const link of links ?? []) {
+      if (link.user_id) {
+        userIdMap[link.user_id] = link.is_active;
+      }
+    }
+
+    const userIds = Object.keys(userIdMap);
+    if (userIds.length === 0) {
+      setCourseUsers([]);
+      setCourseLoading(false);
+      return;
+    }
+
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name')
+      .in('id', userIds);
+
+    if (profilesError) {
+      console.error('❌ Error fetching profiles:', profilesError);
+    } else {
+      const merged = (profiles ?? []).map((u) => ({
+        ...u,
+        is_active: userIdMap[u.id] ?? false,
+      }));
+      setCourseUsers(merged);
+    }
+
+    setCourseLoading(false);
+  };
+
+  const handleToggleUserActive = (user: any) => {
+    setConfirmToggleUser(user);
+  };
+
+  const confirmToggle = async () => {
+    if (!confirmToggleUser || !selectedCourseId) return;
+
+    const newStatus = !confirmToggleUser.is_active;
+
+    const { error } = await supabase
+      .from('user_courses')
+      .update({ is_active: newStatus })
+      .eq('user_id', confirmToggleUser.id)
+      .eq('course_id', selectedCourseId);
+
+    if (!error) {
+      setSnackbarMsg(
+        newStatus
+          ? '✅ Course activated for user.'
+          : '✅ Course deactivated for user.'
+      );
+      fetchUsersInCourse(selectedCourseId);
+    } else {
+      setSnackbarMsg('❌ Failed to update user status.');
+    }
+
+    setConfirmToggleUser(null);
+  };
 
   const handleUpdate = async (id: string, first_name: string, last_name: string) => {
     setSavingId(id);
@@ -62,14 +175,107 @@ export default function SuperadminPage() {
       .eq('id', id);
 
     if (error) {
-      console.error('Error updating name:', error);
       setSnackbarMsg('❌ Update failed.');
     } else {
       setSnackbarMsg('✅ Name updated!');
     }
-
     setSavingId(null);
   };
+
+  const openAddUserDialog = async () => {
+    if (!selectedCourseId) return;
+
+    const { data: allLinks } = await supabase
+      .from('user_courses')
+      .select('user_id')
+      .eq('course_id', selectedCourseId);
+
+    const userIdsInCourse = allLinks?.map((l) => l.user_id) ?? [];
+
+    const { data: allUsers } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name');
+
+    const filtered = (allUsers ?? []).filter((u) => !userIdsInCourse.includes(u.id));
+    setUsersNotInCourse(filtered);
+    setShowAddUserDialog(true);
+  };
+
+  const handleAddUser = async () => {
+    if (!selectedCourseId || !selectedAddUserId) return;
+
+    if (setAsActive) {
+      const { data: currentActive = [] } = await supabase
+        .from('user_courses')
+        .select('course_id')
+        .eq('user_id', selectedAddUserId)
+        .eq('is_active', true);
+
+      if ((currentActive ?? []).length > 0) {
+        const { error: deactivateErr } = await supabase
+          .from('user_courses')
+          .update({ is_active: false })
+          .eq('user_id', selectedAddUserId)
+          .eq('is_active', true);
+
+        if (deactivateErr) {
+          setSnackbarMsg('❌ Failed to deactivate old course.');
+          return;
+        }
+      }
+    }
+
+    const { error } = await supabase.from('user_courses').insert({
+      user_id: selectedAddUserId,
+      course_id: selectedCourseId,
+      is_active: setAsActive,
+    });
+
+    if (!error) {
+      setSnackbarMsg('✅ User added to course!');
+      fetchUsersInCourse(selectedCourseId);
+      setShowAddUserDialog(false);
+      setSelectedAddUserId(null);
+      setSetAsActive(false);
+    } else {
+      setSnackbarMsg('❌ Failed to add user.');
+    }
+  };
+
+const handleCreateUser = async () => {
+  if (!newUserEmail) {
+    setSnackbarMsg('❌ Email is required.');
+    return;
+  }
+
+  setCreatingUser(true);
+
+  const res = await fetch('/api/create-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: newUserEmail,
+      first_name: newFirstName,
+      last_name: newLastName,
+    }),
+  });
+
+  const result = await res.json();
+
+  if (res.ok) {
+    setSnackbarMsg('✅ User created!');
+    setShowCreateUserDialog(false);
+    setNewUserEmail('');
+    setNewFirstName('');
+    setNewLastName('');
+    fetchProfiles(); // refresh user list
+  } else {
+    setSnackbarMsg(`❌ ${result.error || 'Failed to create user'}`);
+  }
+
+  setCreatingUser(false);
+};
+
 
   if (loading) return <CircularProgress sx={{ m: 5 }} />;
 
@@ -82,70 +288,211 @@ export default function SuperadminPage() {
   }
 
   return (
-  <Box sx={{ maxWidth: 1200, mx: 'auto', px: 2, py: 4 }}>
-    <Typography variant="h4" gutterBottom>
-      Superadmin Panel
-    </Typography>
-    <Typography variant="subtitle1" gutterBottom>
-      Edit user names linked to auth accounts
-    </Typography>
+    <Box sx={{ maxWidth: 1200, mx: 'auto', px: 2, py: 4 }}>
+      <Typography variant="h4" gutterBottom>
+        Superadmin Panel
+      </Typography>
+      <Typography variant="subtitle1" gutterBottom>
+        Edit user names & manage course memberships
+      </Typography>
 
-    {users.map((u) => (
-      <Paper
-        key={u.id}
-        sx={{
-          p: 3,
-          mb: 3,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
-        }}
-      >
-        <Typography variant="subtitle1" sx={{ fontWeight: 500, mb: 1 }}>
-  ✉️ {u.email}
-</Typography>
+      <Tabs value={selectedTab} onChange={(_, val) => setSelectedTab(val)} sx={{ mb: 3 }}>
+        <Tab label="Users" />
+        <Tab label="Courses" />
+      </Tabs>
 
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <TextField
-            label="First Name"
-            value={u.first_name || ''}
-            onChange={(e) =>
-              setUsers((prev) =>
-                prev.map((item) =>
-                  item.id === u.id ? { ...item, first_name: e.target.value } : item
-                )
-              )
-            }
-          />
-          <TextField
-            label="Last Name"
-            value={u.last_name || ''}
-            onChange={(e) =>
-              setUsers((prev) =>
-                prev.map((item) =>
-                  item.id === u.id ? { ...item, last_name: e.target.value } : item
-                )
-              )
-            }
-          />
-          <Button
-            variant="contained"
-            onClick={() => handleUpdate(u.id, u.first_name, u.last_name)}
-            disabled={savingId === u.id}
-          >
-            {savingId === u.id ? 'Saving...' : 'Save'}
+      {selectedTab === 0 && (
+        <>
+        <Button
+  variant="outlined"
+  onClick={() => setShowCreateUserDialog(true)}
+  sx={{ mb: 2 }}
+>
+  ➕ Add New User
+</Button>
+
+          {users.map((u) => (
+            <Paper key={u.id} sx={{ p: 3, mb: 3 }}>
+              <Typography variant="subtitle1">✉️ {u.email}</Typography>
+              <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+                <TextField
+                  label="First Name"
+                  value={u.first_name || ''}
+                  onChange={(e) =>
+                    setUsers((prev) =>
+                      prev.map((item) =>
+                        item.id === u.id ? { ...item, first_name: e.target.value } : item
+                      )
+                    )
+                  }
+                />
+                <TextField
+                  label="Last Name"
+                  value={u.last_name || ''}
+                  onChange={(e) =>
+                    setUsers((prev) =>
+                      prev.map((item) =>
+                        item.id === u.id ? { ...item, last_name: e.target.value } : item
+                      )
+                    )
+                  }
+                />
+                <Button
+                  variant="contained"
+                  onClick={() => handleUpdate(u.id, u.first_name, u.last_name)}
+                  disabled={savingId === u.id}
+                >
+                  {savingId === u.id ? 'Saving...' : 'Save'}
+                </Button>
+              </Box>
+            </Paper>
+          ))}
+        </>
+      )}
+
+      {selectedTab === 1 && (
+        <>
+          <FormControl fullWidth sx={{ mb: 3 }}>
+            <InputLabel>Select Course</InputLabel>
+            <Select
+              value={selectedCourseId ?? ''}
+              label="Select Course"
+              onChange={(e) => {
+                setSelectedCourseId(e.target.value);
+                fetchUsersInCourse(e.target.value);
+              }}
+            >
+              {courses.map((c) => (
+                <MenuItem key={c.course_id} value={c.course_id}>
+                  {new Date(c.start_date).toLocaleDateString()}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button variant="outlined" onClick={openAddUserDialog} sx={{ mb: 3 }}>
+            ➕ Add User to Course
           </Button>
-        </Box>
-      </Paper>
-    ))}
 
-    <Snackbar
-      open={!!snackbarMsg}
-      autoHideDuration={3000}
-      onClose={() => setSnackbarMsg('')}
-      message={snackbarMsg}
+          {courseLoading ? (
+            <CircularProgress sx={{ m: 2 }} />
+          ) : (
+            courseUsers.map((user) => (
+              <Paper
+                key={user.id}
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <Typography>
+                  {user.first_name} {user.last_name}
+                </Typography>
+                <Checkbox
+                  checked={user.is_active}
+                  onChange={() => handleToggleUserActive(user)}
+                />
+              </Paper>
+            ))
+          )}
+
+          <Dialog open={!!confirmToggleUser} onClose={() => setConfirmToggleUser(null)}>
+            <DialogTitle>Confirm Action</DialogTitle>
+            <DialogContent>
+  <Typography>
+    {confirmToggleUser
+      ? confirmToggleUser.is_active
+        ? `Deactivate course for ${confirmToggleUser.first_name} ${confirmToggleUser.last_name}?`
+        : `Activate course for ${confirmToggleUser.first_name} ${confirmToggleUser.last_name}?`
+      : ''}
+  </Typography>
+</DialogContent>
+
+            <DialogActions>
+              <Button onClick={confirmToggle} variant="contained">
+                Yes
+              </Button>
+              <Button onClick={() => setConfirmToggleUser(null)}>Cancel</Button>
+            </DialogActions>
+          </Dialog>
+        </>
+      )}
+
+      <Dialog open={showAddUserDialog} onClose={() => setShowAddUserDialog(false)}>
+        <DialogTitle>Add User to Course</DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>User</InputLabel>
+            <Select
+              value={selectedAddUserId ?? ''}
+              onChange={(e) => setSelectedAddUserId(e.target.value)}
+              label="User"
+            >
+              {usersNotInCourse.map((u) => (
+                <MenuItem key={u.id} value={u.id}>
+                  {u.first_name} {u.last_name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Box mt={2}>
+            <Checkbox
+              checked={setAsActive}
+              onChange={(e) => setSetAsActive(e.target.checked)}
+            />
+            Set as active course
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleAddUser} variant="contained">
+            Add
+          </Button>
+          <Button onClick={() => setShowAddUserDialog(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+<Dialog open={showCreateUserDialog} onClose={() => setShowCreateUserDialog(false)}>
+  <DialogTitle>Add New User</DialogTitle>
+  <DialogContent>
+    <TextField
+      fullWidth
+      label="Email"
+      value={newUserEmail}
+      onChange={(e) => setNewUserEmail(e.target.value)}
+      sx={{ mt: 2 }}
     />
-  </Box>
-);
+    <TextField
+      fullWidth
+      label="First Name"
+      value={newFirstName}
+      onChange={(e) => setNewFirstName(e.target.value)}
+      sx={{ mt: 2 }}
+    />
+    <TextField
+      fullWidth
+      label="Last Name"
+      value={newLastName}
+      onChange={(e) => setNewLastName(e.target.value)}
+      sx={{ mt: 2 }}
+    />
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={handleCreateUser} variant="contained" disabled={creatingUser}>
+      {creatingUser ? 'Creating...' : 'Create'}
+    </Button>
+    <Button onClick={() => setShowCreateUserDialog(false)}>Cancel</Button>
+  </DialogActions>
+</Dialog>
 
+      <Snackbar
+        open={!!snackbarMsg}
+        autoHideDuration={3000}
+        onClose={() => setSnackbarMsg('')}
+        message={snackbarMsg}
+      />
+    </Box>
+  );
 }

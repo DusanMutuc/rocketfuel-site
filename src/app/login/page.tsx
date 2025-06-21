@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const superadminEmails = ['dusanmutuc@gmail.com', 'other@example.com'];
+  const superadminEmails = process.env.PUBLIC_NEXT_SUPERADMIN_EMAILS?.split(';');
 
   const handleLogin = async () => {
     setErrorMsg('');
@@ -37,7 +37,7 @@ export default function LoginPage() {
     }
 
     // 2. If email matches superadmin, redirect immediately
-    if (user.email && superadminEmails.includes(user.email)) {
+    if (user.email && superadminEmails?.includes(user.email)) {
 
       router.push('/superadmin');
       setLoading(false);

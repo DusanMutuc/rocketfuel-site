@@ -30,7 +30,7 @@ import {
   IconButton,
   Button,
   TextField,
-  Snackbar
+  Snackbar,
 } from '@mui/material';
 import Link from 'next/link';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
@@ -56,11 +56,11 @@ type TaskKeys = Exclude<keyof WeeklyData, 'week_start'>;
 
 interface Props {
   userId: string;
+  courseId?: string;
   disableRedirect?: boolean;
 }
 
-export default function UserDetailView({ userId, disableRedirect }: Props) {
-
+export default function UserDetailView({ userId, courseId, disableRedirect }: Props) {
   const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -74,6 +74,8 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
   const [newValue, setNewValue] = useState<number>(0);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [effectiveCourseId, setEffectiveCourseId] = useState<string | null>(null);
+  const [courseStartDate, setCourseStartDate] = useState<string | null>(null);
 
   const taskTypeMapping: Record<TaskKeys, string> = {
     asks: 'ask',
@@ -85,42 +87,90 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
   };
 
   useEffect(() => {
-    const getData = async () => {
+  const getData = async () => {
+    try {
       setLoading(true);
 
-      const { data: course } = await supabase
-        .from('courses')
-        .select('start_date')
-        .order('start_date', { ascending: false })
-        .limit(1)
-        .single();
+      let actualCourseId = courseId;
+let actualCourseStart: string | null = null;
 
-      const courseStart = course?.start_date;
-      const endDate = format(new Date(), 'yyyy-MM-dd');
+if (!actualCourseId) {
+  // fallback: find user's active course
+  const { data: userCourse, error: userCourseError } = await supabase
+    .from('user_courses')
+    .select('course_id')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .single();
 
-      const { data: weekly } = await supabase.rpc('get_weekly_task_counts', {
-        course_start: courseStart,
-        uid: userId,
-      });
+  console.log('[DEBUG] Active user course lookup:', { userCourse, userCourseError });
 
-      if (weekly && Array.isArray(weekly)) {
-  setWeeklyData(weekly);
-
-  const courseStartDate = new Date(courseStart);
-  const today = new Date();
-
-  const diffInDays = Math.floor((today.getTime() - courseStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  let weekIndex = Math.floor(diffInDays / 7);
-
-  // Clamp between week 0 and 11 (Weeks 1 to 12)
-  weekIndex = Math.max(0, Math.min(11, weekIndex));
-
-  const weekData = weekly[weekIndex];
-  if (weekData) {
-    setSelectedWeekStart(weekData.week_start);
+  if (!userCourse || userCourseError) {
+    console.error('[ERROR] User has no active course in user_courses.');
+    setSnackbarMessage('User has no active course.');
+    setSnackbarOpen(true);
+    setLoading(false);
+    return;
   }
+
+  actualCourseId = userCourse.course_id;
 }
 
+// ✅ Fetch start_date for the course (even if it was passed in)
+const { data: course, error: courseError } = await supabase
+  .from('courses')
+  .select('start_date')
+  .eq('course_id', actualCourseId)
+  .single();
+
+console.log('[DEBUG] Fetched course start date:', { course, courseError });
+
+if (!course || courseError) {
+  console.error('[ERROR] Could not fetch course start date.', courseError);
+  setSnackbarMessage('Failed to load course info');
+  setSnackbarOpen(true);
+  setLoading(false);
+  return;
+}
+
+actualCourseStart = course.start_date;
+
+
+      if (!actualCourseId || !actualCourseStart) {
+        console.error('[ERROR] Missing fallback course_id or start_date.', {
+          actualCourseId,
+          actualCourseStart,
+        });
+        setSnackbarMessage('Missing course info');
+        setSnackbarOpen(true);
+        setLoading(false);
+        return;
+      }
+
+      setEffectiveCourseId(actualCourseId);
+      setCourseStartDate(actualCourseStart);
+
+      const endDate = format(new Date(), 'yyyy-MM-dd');
+
+      const { data: weekly, error: weeklyError } = await supabase.rpc('get_weekly_task_counts', {
+        _course_id: actualCourseId,
+        uid: userId,
+      });
+      console.log('[DEBUG] Weekly data:', { weekly, weeklyError });
+
+      if (weekly && Array.isArray(weekly)) {
+        setWeeklyData(weekly);
+
+        const courseStartDateObj = new Date(actualCourseStart);
+        const today = new Date();
+        const diffInDays = Math.floor((today.getTime() - courseStartDateObj.getTime()) / (1000 * 60 * 60 * 24));
+        let weekIndex = Math.floor(diffInDays / 7);
+        weekIndex = Math.max(0, Math.min(11, weekIndex));
+        const weekData = weekly[weekIndex];
+        if (weekData) {
+          setSelectedWeekStart(weekData.week_start);
+        }
+      }
 
       const { data: taskTypesData } = await supabase
         .from('task_types')
@@ -133,21 +183,23 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
 
       const scalingFactors = {
         asks: 1,
-        follow_ups: minimalAmounts[taskTypeMapping.asks] / minimalAmounts[taskTypeMapping.follow_ups],
-        open_houses: minimalAmounts[taskTypeMapping.asks] / minimalAmounts[taskTypeMapping.open_houses],
-        handwritten_cards: minimalAmounts[taskTypeMapping.asks] / minimalAmounts[taskTypeMapping.handwritten_cards],
-        action_promises: minimalAmounts[taskTypeMapping.asks] / minimalAmounts[taskTypeMapping.action_promises],
-        exercises: minimalAmounts[taskTypeMapping.asks] / minimalAmounts[taskTypeMapping.exercises],
+        follow_ups: minimalAmounts['ask'] / minimalAmounts['follow_up'],
+        open_houses: minimalAmounts['ask'] / minimalAmounts['open_house'],
+        handwritten_cards: minimalAmounts['ask'] / minimalAmounts['handwritten_card'],
+        action_promises: minimalAmounts['ask'] / minimalAmounts['action_promise'],
+        exercises: minimalAmounts['ask'] / minimalAmounts['exercise'],
       };
 
-      const { data: dailyData } = await supabase.rpc(
+      const { data: dailyData, error: dailyError } = await supabase.rpc(
         'get_daily_task_counts_all_types_in_range',
         {
+          _course_id: actualCourseId,
           uid: userId,
-          start_date: courseStart,
+          start_date: actualCourseStart,
           end_date: endDate,
         }
       );
+      console.log('[DEBUG] Daily data:', { dailyData, dailyError });
 
       let running = {
         asks: 0,
@@ -159,9 +211,9 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
         gross_revenue: 0,
       };
 
-      const baselineDaily = minimalAmounts[taskTypeMapping.asks] / 7;
+      const baselineDaily = minimalAmounts['ask'] / 7;
 
-      const transformed = dailyData.map((row: any, index: number) => {
+      const transformed = (dailyData ?? []).map((row: any, index: number) => {
         running.asks += row.asks;
         running.follow_ups += row.follow_ups;
         running.open_houses += row.open_houses;
@@ -199,19 +251,28 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
         setPipelineRevenue(totalRevenue);
       }
 
-      const { data: grossRevData } = await supabase.rpc('get_total_gross_revenue', {
+      const { data: grossRevData, error: revError } = await supabase.rpc('get_total_gross_revenue', {
         uid: userId,
       });
+      console.log('[DEBUG] Gross revenue:', { grossRevData, revError });
 
       if (grossRevData) {
         setTotalGrossRevenue(grossRevData);
       }
 
       setLoading(false);
-    };
+    } catch (err) {
+      console.error('[FATAL] getData threw an exception:', err);
+      setSnackbarMessage('Unexpected error');
+      setSnackbarOpen(true);
+      setLoading(false);
+    }
+  };
 
-    getData();
-  }, [userId]);
+  getData();
+}, [userId, courseId]);
+
+
 
   const handleCardClick = (key: TaskKeys, value: number) => {
     setSelectedTaskKey(key);
@@ -220,7 +281,7 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
   };
 
   const handleSave = async () => {
-    if (!selectedTaskKey || !selectedWeekStart) return;
+    if (!selectedTaskKey || !selectedWeekStart || !effectiveCourseId) return;
 
     const dbTaskName = taskTypeMapping[selectedTaskKey];
     const { data: taskTypes } = await supabase
@@ -232,6 +293,7 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
 
     const taskTypeId = taskTypes[0].task_type_id;
     const { error } = await supabase.rpc('update_weekly_task_logs', {
+      _course_id: effectiveCourseId,
       _user_id: userId,
       _task_type_id: taskTypeId,
       _week_start: selectedWeekStart,
@@ -239,22 +301,20 @@ export default function UserDetailView({ userId, disableRedirect }: Props) {
     });
 
     if (!error) {
-  setWeeklyData((prev) =>
-    prev.map((w) =>
-      w.week_start === selectedWeekStart
-        ? { ...w, [selectedTaskKey]: newValue }
-        : w
-    )
-  );
-  setSnackbarMessage('Task updated successfully!');
-  setSnackbarOpen(true);
-} else {
-  setSnackbarMessage('Error saving task.');
-  setSnackbarOpen(true);
-}
+      setWeeklyData((prev) =>
+        prev.map((w) =>
+          w.week_start === selectedWeekStart
+            ? { ...w, [selectedTaskKey]: newValue }
+            : w
+        )
+      );
+      setSnackbarMessage('Task updated successfully!');
+    } else {
+      setSnackbarMessage('Error saving task.');
+    }
 
-setEditModalOpen(false);
-
+    setSnackbarOpen(true);
+    setEditModalOpen(false);
   };
 
   if (loading) return <p>Loading...</p>;
@@ -503,7 +563,7 @@ setEditModalOpen(false);
             <Box
               sx={{
                 height: '100%',
-                width: `${Math.min(100, (totalGrossRevenue / 20000) * 100)}%`,
+                width: `${Math.min(100, (totalGrossRevenue / 5000) * 100)}%`,
                 backgroundColor: '#1b52a6',
                 transition: 'width 0.3s ease-in-out',
               }}
