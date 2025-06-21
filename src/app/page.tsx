@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabaseClient';
 export default function Home() {
   const router = useRouter();
 
+  const superadminEmails = process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';');
+
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -14,8 +16,6 @@ export default function Home() {
         router.replace('/login');
         return;
       }
-
-      const superadminEmails = process.env.PUBLIC_NEXT_SUPERADMIN_EMAILS?.split(';');
 
       if (session?.user.email && superadminEmails?.includes(session?.user.email)) {
         router.push('/superadmin');

@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const superadminEmails = process.env.PUBLIC_NEXT_SUPERADMIN_EMAILS?.split(';');
+  const superadminEmails = process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';');
 
   const handleLogin = async () => {
     setErrorMsg('');
