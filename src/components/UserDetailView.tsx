@@ -68,6 +68,7 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
   const [pipelineCount, setPipelineCount] = useState<number>(0);
   const [pipelineRevenue, setPipelineRevenue] = useState<number>(0);
   const [totalGrossRevenue, setTotalGrossRevenue] = useState<number>(0);
+  const [goals, setGoals] = useState<Record<TaskKeys, number> | null>(null);
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedTaskKey, setSelectedTaskKey] = useState<TaskKeys | null>(null);
@@ -173,13 +174,26 @@ actualCourseStart = course.start_date;
       }
 
       const { data: taskTypesData } = await supabase
-        .from('task_types')
-        .select('name, minimal_amount');
+  .from('task_types')
+  .select('name, minimal_amount, optimal_amount');
 
-      const minimalAmounts: Record<string, number> = {};
-      taskTypesData?.forEach((task) => {
-        minimalAmounts[task.name] = task.minimal_amount;
-      });
+const minimalAmounts: Record<string, number> = {};
+const optimalAmounts: Record<string, number> = {};
+
+taskTypesData?.forEach((task) => {
+  minimalAmounts[task.name] = task.minimal_amount;
+  optimalAmounts[task.name] = task.optimal_amount;
+});
+
+// store the “goal” numbers once we have them
+setGoals({
+  asks:               optimalAmounts['ask']             ?? 0,
+  follow_ups:         optimalAmounts['follow_up']       ?? 0,
+  open_houses:        optimalAmounts['open_house']      ?? 0,
+  handwritten_cards:  optimalAmounts['handwritten_card']?? 0,
+  action_promises:    optimalAmounts['action_promise']  ?? 0,
+  exercises:          optimalAmounts['exercise']        ?? 0,
+});
 
       const scalingFactors = {
         asks: 1,
@@ -317,18 +331,11 @@ actualCourseStart = course.start_date;
     setEditModalOpen(false);
   };
 
-  if (loading) return <p>Loading...</p>;
+if (loading || !goals) return <p>Loading...</p>;
+
 
   const currentWeek = weeklyData.find((w) => w.week_start === selectedWeekStart);
 
-  const goals: Record<TaskKeys, number> = {
-    asks: 25,
-    follow_ups: 50,
-    open_houses: 3,
-    handwritten_cards: 20,
-    action_promises: 25,
-    exercises: 5,
-  };
 
   const iconMap: Record<TaskKeys, React.ReactNode> = {
     asks: <RecordVoiceOverIcon fontSize="small" />,
