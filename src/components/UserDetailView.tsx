@@ -322,11 +322,11 @@ actualCourseStart = course.start_date;
   const currentWeek = weeklyData.find((w) => w.week_start === selectedWeekStart);
 
   const goals: Record<TaskKeys, number> = {
-    asks: 70,
+    asks: 25,
     follow_ups: 50,
     open_houses: 3,
     handwritten_cards: 20,
-    action_promises: 20,
+    action_promises: 25,
     exercises: 5,
   };
 
