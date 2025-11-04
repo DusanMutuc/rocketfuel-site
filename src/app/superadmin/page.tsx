@@ -24,7 +24,8 @@ import {
   DialogActions,
 } from '@mui/material';
 
-const allowedEmails = ['dusanmutuc@gmail.com', 'other@example.com'];
+const superadminEmails =
+  process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';') ?? [];
 
 export default function SuperadminPage() {
   const [user, setUser] = useState<any>(null);
@@ -63,7 +64,8 @@ export default function SuperadminPage() {
       setUser(user);
       console.log('👤 Auth user:', user);
 
-      if (user?.email && allowedEmails.includes(user.email)) {
+      // 🔁 Was: if (user?.email && allowedEmails.includes(user.email)) {
+      if (user?.email && superadminEmails.includes(user.email)) {
         try {
           console.log('✅ Email allowed. Fetching profiles and courses...');
           await Promise.all([fetchProfiles(), fetchCourses()]);
@@ -89,7 +91,9 @@ export default function SuperadminPage() {
 
   const fetchCourses = async () => {
     console.log('📡 Fetching courses...');
-    const { data, error } = await supabase.from('courses').select('course_id, start_date');
+    const { data, error } = await supabase
+      .from('courses')
+      .select('course_id, start_date');
     if (!error) setCourses(data || []);
   };
 
@@ -279,7 +283,8 @@ export default function SuperadminPage() {
 
   if (loading) return <CircularProgress sx={{ m: 5 }} />;
 
-  if (!user || !allowedEmails.includes(user.email)) {
+  // 🔁 Was: if (!user || !allowedEmails.includes(user.email)) {
+  if (!user || !user.email || !superadminEmails.includes(user.email)) {
     return (
       <Box m={5}>
         <Typography color="error">🚫 Access Denied</Typography>
@@ -340,7 +345,9 @@ export default function SuperadminPage() {
                   onChange={(e) =>
                     setUsers((prev) =>
                       prev.map((item) =>
-                        item.id === u.id ? { ...item, first_name: e.target.value } : item
+                        item.id === u.id
+                          ? { ...item, first_name: e.target.value }
+                          : item
                       )
                     )
                   }
@@ -351,7 +358,9 @@ export default function SuperadminPage() {
                   onChange={(e) =>
                     setUsers((prev) =>
                       prev.map((item) =>
-                        item.id === u.id ? { ...item, last_name: e.target.value } : item
+                        item.id === u.id
+                          ? { ...item, last_name: e.target.value }
+                          : item
                       )
                     )
                   }
