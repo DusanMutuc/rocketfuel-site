@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
 import {
   DataGrid,
   GridColDef,
@@ -18,6 +19,7 @@ import {
   Tooltip,
   Snackbar,
   Alert,
+  Button, // ⬅️ added
 } from '@mui/material';
 import UserDetailView from '@/components/UserDetailView';
 
@@ -46,7 +48,11 @@ export default function AdminDashboard() {
   const [currentWeekIndex, setCurrentWeekIndex] = useState<number | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [courses, setCourses] = useState<{ id: string; start_date: string }[]>([]);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error',
+  });
 
   const fetchCourses = async () => {
     const { data, error } = await supabase
@@ -72,7 +78,9 @@ export default function AdminDashboard() {
       setCourseStartDate(course.start_date);
       const courseStart = new Date(course.start_date);
       const now = new Date();
-      const diffInDays = Math.floor((now.getTime() - courseStart.getTime()) / (1000 * 60 * 60 * 24));
+      const diffInDays = Math.floor(
+        (now.getTime() - courseStart.getTime()) / (1000 * 60 * 60 * 24),
+      );
       const weekIndex = Math.floor(diffInDays / 7);
       setCurrentWeekIndex(weekIndex >= 0 ? weekIndex : null);
 
@@ -82,7 +90,11 @@ export default function AdminDashboard() {
         .eq('course_id', selectedCourseId);
 
       if (ucError || !userCourses) {
-        setSnackbar({ open: true, message: 'Failed to load course users', severity: 'error' });
+        setSnackbar({
+          open: true,
+          message: 'Failed to load course users',
+          severity: 'error',
+        });
         setLoading(false);
         return;
       }
@@ -123,14 +135,15 @@ export default function AdminDashboard() {
 
         const { data: pipelineData } = await supabase.rpc(
           'get_clients_by_client_type',
-          { uid: user.id, client_type_name: 'Pipeline' }
+          { uid: user.id, client_type_name: 'Pipeline' },
         );
 
         const pipelineCount = pipelineData?.length || 0;
-        const pipelineRevenue = pipelineData?.reduce(
-          (sum: number, c: any) => sum + (Number(c.pipeline_revenue) || 0),
-          0
-        ) || 0;
+        const pipelineRevenue =
+          pipelineData?.reduce(
+            (sum: number, c: any) => sum + (Number(c.pipeline_revenue) || 0),
+            0,
+          ) || 0;
 
         const row: any = {
           id: user.id,
@@ -140,11 +153,9 @@ export default function AdminDashboard() {
           pipeline_revenue: pipelineRevenue,
         };
 
-        let total = 0;
         weekly?.forEach((week: any, i: number) => {
           const key = `week_${i + 1}`;
           const value = week[selectedTaskType.key] ?? 0;
-          total += value;
           row[key] = value;
           totalsRow[key] = (totalsRow[key] || 0) + value;
         });
@@ -173,10 +184,11 @@ export default function AdminDashboard() {
           .gte('created_at', threeDaysAgo.toISOString())
           .limit(1);
 
-        const recentTaskTotal = recentTaskLogs?.reduce(
-          (sum, log) => sum + (log.amount ?? 0),
-          0
-        ) ?? 0;
+        const recentTaskTotal =
+          recentTaskLogs?.reduce(
+            (sum, log) => sum + (log.amount ?? 0),
+            0,
+          ) ?? 0;
 
         const isInactive = !anyRecentLogs || anyRecentLogs.length === 0;
 
@@ -204,7 +216,11 @@ export default function AdminDashboard() {
 
       setRows([...resolvedRows, totalsRow]);
     } catch (err) {
-      setSnackbar({ open: true, message: 'Failed to load data', severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: 'Failed to load data',
+        severity: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -221,11 +237,15 @@ export default function AdminDashboard() {
     }
   }, [selectedCourseId, selectedTaskType.key]);
 
-  const processRowUpdate = async (newRow: GridRowModel, oldRow: GridRowModel) => {
-    if (newRow.id === 'totals' || !courseStartDate || !selectedCourseId) return oldRow;
+  const processRowUpdate = async (
+    newRow: GridRowModel,
+    oldRow: GridRowModel,
+  ) => {
+    if (newRow.id === 'totals' || !courseStartDate || !selectedCourseId)
+      return oldRow;
 
     const changedWeek = Object.keys(newRow).find(
-      key => key.startsWith('week_') && newRow[key] !== oldRow[key]
+      (key) => key.startsWith('week_') && newRow[key] !== oldRow[key],
     );
     if (!changedWeek) return oldRow;
 
@@ -243,10 +263,18 @@ export default function AdminDashboard() {
     });
 
     if (!error) {
-      setSnackbar({ open: true, message: 'Task updated!', severity: 'success' });
-      setRows(prev => prev.map(r => (r.id === newRow.id ? newRow : r)));
+      setSnackbar({
+        open: true,
+        message: 'Task updated!',
+        severity: 'success',
+      });
+      setRows((prev) => prev.map((r) => (r.id === newRow.id ? newRow : r)));
     } else {
-      setSnackbar({ open: true, message: 'Update failed', severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: 'Update failed',
+        severity: 'error',
+      });
     }
 
     return newRow;
@@ -263,9 +291,14 @@ export default function AdminDashboard() {
     align: 'right',
     headerAlign: 'right',
     editable: true,
-    headerClassName: currentWeekIndex !== null && i === currentWeekIndex ? 'current-week-col' : '',
+    headerClassName:
+      currentWeekIndex !== null && i === currentWeekIndex
+        ? 'current-week-col'
+        : '',
     cellClassName: (params) =>
-      currentWeekIndex !== null && i === currentWeekIndex ? 'current-week-col' : '',
+      currentWeekIndex !== null && i === currentWeekIndex
+        ? 'current-week-col'
+        : '',
     renderHeader: () => (
       <Tooltip title={`Week ${i + 1} – Task counts since course start`}>
         <span>{`W ${i + 1}`}</span>
@@ -310,9 +343,25 @@ export default function AdminDashboard() {
 
   return (
     <Box sx={{ p: 4, maxWidth: '1200px', margin: '0 auto' }}>
-      <Typography variant="h4" gutterBottom>
-        Admin Dashboard
-      </Typography>
+      {/* Top bar: title + Superadmin button */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+        }}
+      >
+        <Typography variant="h4">Admin Dashboard</Typography>
+        <Button
+          component={Link}
+          href="/superadmin"
+          variant="outlined"
+          size="small"
+        >
+          Superadmin
+        </Button>
+      </Box>
 
       <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
         <FormControl sx={{ minWidth: 200 }}>
@@ -336,7 +385,9 @@ export default function AdminDashboard() {
             value={selectedTaskType.key}
             label="Task Type"
             onChange={(e) => {
-              const selected = TASK_TYPES.find(t => t.key === e.target.value);
+              const selected = TASK_TYPES.find(
+                (t) => t.key === e.target.value,
+              );
               if (selected) setSelectedTaskType(selected);
             }}
           >
@@ -435,9 +486,14 @@ export default function AdminDashboard() {
       {selectedUser && selectedCourseId && (
         <Box mt={4}>
           <Typography variant="h6" gutterBottom>
-            Detailed View for {selectedUser.first_name} {selectedUser.last_name}
+            Detailed View for {selectedUser.first_name}{' '}
+            {selectedUser.last_name}
           </Typography>
-          <UserDetailView userId={selectedUser.id} courseId={selectedCourseId} disableRedirect />
+          <UserDetailView
+            userId={selectedUser.id}
+            courseId={selectedCourseId}
+            disableRedirect
+          />
         </Box>
       )}
     </Box>

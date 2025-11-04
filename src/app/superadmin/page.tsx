@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Box,
@@ -41,11 +42,11 @@ export default function SuperadminPage() {
   const [selectedAddUserId, setSelectedAddUserId] = useState<string | null>(null);
   const [setAsActive, setSetAsActive] = useState<boolean>(false);
   const [confirmToggleUser, setConfirmToggleUser] = useState<any | null>(null);
-const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
-const [newUserEmail, setNewUserEmail] = useState('');
-const [newFirstName, setNewFirstName] = useState('');
-const [newLastName, setNewLastName] = useState('');
-const [creatingUser, setCreatingUser] = useState(false);
+  const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newFirstName, setNewFirstName] = useState('');
+  const [newLastName, setNewLastName] = useState('');
+  const [creatingUser, setCreatingUser] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -242,40 +243,39 @@ const [creatingUser, setCreatingUser] = useState(false);
     }
   };
 
-const handleCreateUser = async () => {
-  if (!newUserEmail) {
-    setSnackbarMsg('❌ Email is required.');
-    return;
-  }
+  const handleCreateUser = async () => {
+    if (!newUserEmail) {
+      setSnackbarMsg('❌ Email is required.');
+      return;
+    }
 
-  setCreatingUser(true);
+    setCreatingUser(true);
 
-  const res = await fetch('/api/create-user', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: newUserEmail,
-      first_name: newFirstName,
-      last_name: newLastName,
-    }),
-  });
+    const res = await fetch('/api/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: newUserEmail,
+        first_name: newFirstName,
+        last_name: newLastName,
+      }),
+    });
 
-  const result = await res.json();
+    const result = await res.json();
 
-  if (res.ok) {
-    setSnackbarMsg('✅ User created!');
-    setShowCreateUserDialog(false);
-    setNewUserEmail('');
-    setNewFirstName('');
-    setNewLastName('');
-    fetchProfiles(); // refresh user list
-  } else {
-    setSnackbarMsg(`❌ ${result.error || 'Failed to create user'}`);
-  }
+    if (res.ok) {
+      setSnackbarMsg('✅ User created!');
+      setShowCreateUserDialog(false);
+      setNewUserEmail('');
+      setNewFirstName('');
+      setNewLastName('');
+      fetchProfiles(); // refresh user list
+    } else {
+      setSnackbarMsg(`❌ ${result.error || 'Failed to create user'}`);
+    }
 
-  setCreatingUser(false);
-};
-
+    setCreatingUser(false);
+  };
 
   if (loading) return <CircularProgress sx={{ m: 5 }} />;
 
@@ -289,9 +289,28 @@ const handleCreateUser = async () => {
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', px: 2, py: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        Superadmin Panel
-      </Typography>
+      {/* Top bar: title + nav back to Admin Dashboard */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 1,
+        }}
+      >
+        <Typography variant="h4" gutterBottom>
+          Superadmin Panel
+        </Typography>
+        <Button
+          component={Link}
+          href="/admin-dashboard"
+          variant="outlined"
+          size="small"
+        >
+          Admin Dashboard
+        </Button>
+      </Box>
+
       <Typography variant="subtitle1" gutterBottom>
         Edit user names & manage course memberships
       </Typography>
@@ -303,13 +322,13 @@ const handleCreateUser = async () => {
 
       {selectedTab === 0 && (
         <>
-        <Button
-  variant="outlined"
-  onClick={() => setShowCreateUserDialog(true)}
-  sx={{ mb: 2 }}
->
-  ➕ Add New User
-</Button>
+          <Button
+            variant="outlined"
+            onClick={() => setShowCreateUserDialog(true)}
+            sx={{ mb: 2 }}
+          >
+            ➕ Add New User
+          </Button>
 
           {users.map((u) => (
             <Paper key={u.id} sx={{ p: 3, mb: 3 }}>
@@ -402,14 +421,14 @@ const handleCreateUser = async () => {
           <Dialog open={!!confirmToggleUser} onClose={() => setConfirmToggleUser(null)}>
             <DialogTitle>Confirm Action</DialogTitle>
             <DialogContent>
-  <Typography>
-    {confirmToggleUser
-      ? confirmToggleUser.is_active
-        ? `Deactivate course for ${confirmToggleUser.first_name} ${confirmToggleUser.last_name}?`
-        : `Activate course for ${confirmToggleUser.first_name} ${confirmToggleUser.last_name}?`
-      : ''}
-  </Typography>
-</DialogContent>
+              <Typography>
+                {confirmToggleUser
+                  ? confirmToggleUser.is_active
+                    ? `Deactivate course for ${confirmToggleUser.first_name} ${confirmToggleUser.last_name}?`
+                    : `Activate course for ${confirmToggleUser.first_name} ${confirmToggleUser.last_name}?`
+                  : ''}
+              </Typography>
+            </DialogContent>
 
             <DialogActions>
               <Button onClick={confirmToggle} variant="contained">
@@ -454,38 +473,39 @@ const handleCreateUser = async () => {
           <Button onClick={() => setShowAddUserDialog(false)}>Cancel</Button>
         </DialogActions>
       </Dialog>
-<Dialog open={showCreateUserDialog} onClose={() => setShowCreateUserDialog(false)}>
-  <DialogTitle>Add New User</DialogTitle>
-  <DialogContent>
-    <TextField
-      fullWidth
-      label="Email"
-      value={newUserEmail}
-      onChange={(e) => setNewUserEmail(e.target.value)}
-      sx={{ mt: 2 }}
-    />
-    <TextField
-      fullWidth
-      label="First Name"
-      value={newFirstName}
-      onChange={(e) => setNewFirstName(e.target.value)}
-      sx={{ mt: 2 }}
-    />
-    <TextField
-      fullWidth
-      label="Last Name"
-      value={newLastName}
-      onChange={(e) => setNewLastName(e.target.value)}
-      sx={{ mt: 2 }}
-    />
-  </DialogContent>
-  <DialogActions>
-    <Button onClick={handleCreateUser} variant="contained" disabled={creatingUser}>
-      {creatingUser ? 'Creating...' : 'Create'}
-    </Button>
-    <Button onClick={() => setShowCreateUserDialog(false)}>Cancel</Button>
-  </DialogActions>
-</Dialog>
+
+      <Dialog open={showCreateUserDialog} onClose={() => setShowCreateUserDialog(false)}>
+        <DialogTitle>Add New User</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Email"
+            value={newUserEmail}
+            onChange={(e) => setNewUserEmail(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="First Name"
+            value={newFirstName}
+            onChange={(e) => setNewFirstName(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Last Name"
+            value={newLastName}
+            onChange={(e) => setNewLastName(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCreateUser} variant="contained" disabled={creatingUser}>
+            {creatingUser ? 'Creating...' : 'Create'}
+          </Button>
+          <Button onClick={() => setShowCreateUserDialog(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={!!snackbarMsg}
