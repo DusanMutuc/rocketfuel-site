@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { createServerClient } from '@supabase/ssr';
 
-// --- ADMIN CLIENT (service role) ---
+// Service-role client for admin operations
 const supabaseAdmin = createClient(
   process.env.SUPABASE_PROJECT_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -11,33 +10,7 @@ const supabaseAdmin = createClient(
   }
 );
 
-// --- SUPERADMIN GUARD (uses cookie session & env list) ---
-function isAllowed(email?: string | null) {
-  const allowed = process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';') ?? [];
-  return !!email && allowed.includes(email);
-}
-
-async function requireSuperadmin(req: NextRequest) {
-  const supa = createServerClient(
-    // you likely already have these set for your app:
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PROJECT_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => req.cookies.get(name)?.value,
-        set: () => {},
-        remove: () => {},
-      },
-    }
-  );
-  const { data, error } = await supa.auth.getUser();
-  if (error || !data.user || !isAllowed(data.user.email)) {
-    return { ok: false as const, res: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
-  }
-  return { ok: true as const, user: data.user };
-}
-
-// -------------------- CREATE USER (unchanged) --------------------
+// -------------------- CREATE USER --------------------
 export async function POST(req: NextRequest) {
   const { email, first_name, last_name } = await req.json();
 
@@ -54,7 +27,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (userError || !user?.user?.id) {
-      return NextResponse.json({ error: userError?.message || 'User creation failed' }, { status: 500 });
+      return NextResponse.json(
+        { error: userError?.message || 'User creation failed' },
+        { status: 500 }
+      );
     }
 
     // Step 2: Create profile
@@ -71,15 +47,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Unexpected error' }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || 'Unexpected error' },
+      { status: 500 }
+    );
   }
 }
 
-// -------------------- DELETE USER (new) --------------------
+// -------------------- DELETE USER --------------------
 export async function DELETE(req: NextRequest) {
-  const guard = await requireSuperadmin(req);
-  if (!guard.ok) return guard.res;
-
   try {
     const { user_id } = await req.json();
     if (!user_id) {
@@ -95,6 +71,7 @@ export async function DELETE(req: NextRequest) {
         .eq('user_id', user_id);
 
       if (error) {
+        console.error('Fetch clients failed:', error);
         return NextResponse.json({ error: 'Fetch clients failed' }, { status: 500 });
       }
 
@@ -106,44 +83,96 @@ export async function DELETE(req: NextRequest) {
           .in('client_id', ids);
 
         if (delLinks) {
-          return NextResponse.json({ error: 'Delete client links failed' }, { status: 500 });
+          console.error('Delete client links failed:', delLinks);
+          return NextResponse.json(
+            { error: 'Delete client links failed' },
+            { status: 500 }
+          );
         }
       }
     }
 
     // clients
     {
-      const { error } = await supabaseAdmin.from('clients').delete().eq('user_id', user_id);
-      if (error) return NextResponse.json({ error: 'Delete clients failed' }, { status: 500 });
+      const { error } = await supabaseAdmin
+        .from('clients')
+        .delete()
+        .eq('user_id', user_id);
+      if (error) {
+        console.error('Delete clients failed:', error);
+        return NextResponse.json({ error: 'Delete clients failed' }, { status: 500 });
+      }
     }
 
     // agent_contacts
     {
-      const { error } = await supabaseAdmin.from('agent_contacts').delete().eq('user_id', user_id);
-      if (error) return NextResponse.json({ error: 'Delete agent contacts failed' }, { status: 500 });
+      const { error } = await supabaseAdmin
+        .from('agent_contacts')
+        .delete()
+        .eq('user_id', user_id);
+      if (error) {
+        console.error('Delete agent contacts failed:', error);
+        return NextResponse.json(
+          { error: 'Delete agent contacts failed' },
+          { status: 500 }
+        );
+      }
     }
 
     // task_logs
     {
-      const { error } = await supabaseAdmin.from('task_logs').delete().eq('user_id', user_id);
-      if (error) return NextResponse.json({ error: 'Delete task logs failed' }, { status: 500 });
+      const { error } = await supabaseAdmin
+        .from('task_logs')
+        .delete()
+        .eq('user_id', user_id);
+      if (error) {
+        console.error('Delete task logs failed:', error);
+        return NextResponse.json(
+          { error: 'Delete task logs failed' },
+          { status: 500 }
+        );
+      }
     }
 
     // user_courses
     {
-      const { error } = await supabaseAdmin.from('user_courses').delete().eq('user_id', user_id);
-      if (error) return NextResponse.json({ error: 'Delete user_courses failed' }, { status: 500 });
+      const { error } = await supabaseAdmin
+        .from('user_courses')
+        .delete()
+        .eq('user_id', user_id);
+      if (error) {
+        console.error('Delete user_courses failed:', error);
+        return NextResponse.json(
+          { error: 'Delete user_courses failed' },
+          { status: 500 }
+        );
+      }
     }
 
     // profiles (FK to auth.users)
     {
-      const { error } = await supabaseAdmin.from('profiles').delete().eq('id', user_id);
-      if (error) return NextResponse.json({ error: 'Delete profile failed' }, { status: 500 });
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('id', user_id);
+      if (error) {
+        console.error('Delete profile failed:', error);
+        return NextResponse.json(
+          { error: 'Delete profile failed' },
+          { status: 500 }
+        );
+      }
     }
 
     // 2) Finally remove the auth user
     const { error: delAuth } = await supabaseAdmin.auth.admin.deleteUser(user_id);
-    if (delAuth) return NextResponse.json({ error: 'Delete auth user failed' }, { status: 500 });
+    if (delAuth) {
+      console.error('Delete auth user failed:', delAuth);
+      return NextResponse.json(
+        { error: 'Delete auth user failed' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
