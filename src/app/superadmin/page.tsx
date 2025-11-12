@@ -49,48 +49,37 @@ export default function SuperadminPage() {
   const [newLastName, setNewLastName] = useState('');
   const [creatingUser, setCreatingUser] = useState(false);
 
+  // New: delete state
+  const [userToDelete, setUserToDelete] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     const fetchUser = async () => {
-      console.log('🔍 Fetching auth user...');
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-
-      if (error) {
-        console.error('❌ Error fetching user:', error);
-      }
-
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) console.error('Error fetching user:', error);
       setUser(user);
-      console.log('👤 Auth user:', user);
 
-      // 🔁 Was: if (user?.email && allowedEmails.includes(user.email)) {
       if (user?.email && superadminEmails.includes(user.email)) {
         try {
-          console.log('✅ Email allowed. Fetching profiles and courses...');
           await Promise.all([fetchProfiles(), fetchCourses()]);
         } catch (err) {
-          console.error('❌ Error in fetchProfiles or fetchCourses:', err);
+          console.error('Error in fetchProfiles or fetchCourses:', err);
         } finally {
-          setLoading(false); // ✅ guaranteed to run
+          setLoading(false);
         }
       } else {
-        console.warn('🚫 Access denied or email not allowed');
         setLoading(false);
       }
     };
-
     fetchUser();
   }, []);
 
   const fetchProfiles = async () => {
-    console.log('📡 Fetching profiles...');
     const { data, error } = await supabase.rpc('get_profiles_with_email');
     if (!error) setUsers(data || []);
   };
 
   const fetchCourses = async () => {
-    console.log('📡 Fetching courses...');
     const { data, error } = await supabase
       .from('courses')
       .select('course_id, start_date');
@@ -105,7 +94,7 @@ export default function SuperadminPage() {
       .eq('course_id', courseId);
 
     if (linksError) {
-      console.error('❌ Error fetching user_courses links:', linksError);
+      console.error('Error fetching user_courses links:', linksError);
       setCourseUsers([]);
       setCourseLoading(false);
       return;
@@ -113,9 +102,7 @@ export default function SuperadminPage() {
 
     const userIdMap: Record<string, boolean> = {};
     for (const link of links ?? []) {
-      if (link.user_id) {
-        userIdMap[link.user_id] = link.is_active;
-      }
+      if (link.user_id) userIdMap[link.user_id] = link.is_active;
     }
 
     const userIds = Object.keys(userIdMap);
@@ -131,12 +118,19 @@ export default function SuperadminPage() {
       .in('id', userIds);
 
     if (profilesError) {
-      console.error('❌ Error fetching profiles:', profilesError);
+      console.error('Error fetching profiles:', profilesError);
     } else {
       const merged = (profiles ?? []).map((u) => ({
         ...u,
         is_active: userIdMap[u.id] ?? false,
       }));
+      // after computing `merged` in fetchUsersInCourse
+merged.sort((a, b) => {
+  const an = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim();
+  const bn = `${b.first_name ?? ''} ${b.last_name ?? ''}`.trim();
+  return an.localeCompare(bn, undefined, { sensitivity: 'base' });
+});
+
       setCourseUsers(merged);
     }
 
@@ -149,7 +143,6 @@ export default function SuperadminPage() {
 
   const confirmToggle = async () => {
     if (!confirmToggleUser || !selectedCourseId) return;
-
     const newStatus = !confirmToggleUser.is_active;
 
     const { error } = await supabase
@@ -159,14 +152,10 @@ export default function SuperadminPage() {
       .eq('course_id', selectedCourseId);
 
     if (!error) {
-      setSnackbarMsg(
-        newStatus
-          ? '✅ Course activated for user.'
-          : '✅ Course deactivated for user.'
-      );
+      setSnackbarMsg(newStatus ? 'Course activated for user.' : 'Course deactivated for user.');
       fetchUsersInCourse(selectedCourseId);
     } else {
-      setSnackbarMsg('❌ Failed to update user status.');
+      setSnackbarMsg('Failed to update user status.');
     }
 
     setConfirmToggleUser(null);
@@ -179,32 +168,37 @@ export default function SuperadminPage() {
       .update({ first_name, last_name })
       .eq('id', id);
 
-    if (error) {
-      setSnackbarMsg('❌ Update failed.');
-    } else {
-      setSnackbarMsg('✅ Name updated!');
-    }
+    setSnackbarMsg(error ? 'Update failed.' : 'Name updated!');
     setSavingId(null);
   };
 
   const openAddUserDialog = async () => {
     if (!selectedCourseId) return;
-
+  
     const { data: allLinks } = await supabase
       .from('user_courses')
       .select('user_id')
       .eq('course_id', selectedCourseId);
-
+  
     const userIdsInCourse = allLinks?.map((l) => l.user_id) ?? [];
-
+  
     const { data: allUsers } = await supabase
       .from('profiles')
       .select('id, first_name, last_name');
-
+  
     const filtered = (allUsers ?? []).filter((u) => !userIdsInCourse.includes(u.id));
+  
+    // NEW: sort A→Z by first_name, then last_name
+    filtered.sort((a, b) => {
+      const an = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim();
+      const bn = `${b.first_name ?? ''} ${b.last_name ?? ''}`.trim();
+      return an.localeCompare(bn, undefined, { sensitivity: 'base' });
+    });
+  
     setUsersNotInCourse(filtered);
     setShowAddUserDialog(true);
   };
+  
 
   const handleAddUser = async () => {
     if (!selectedCourseId || !selectedAddUserId) return;
@@ -224,7 +218,7 @@ export default function SuperadminPage() {
           .eq('is_active', true);
 
         if (deactivateErr) {
-          setSnackbarMsg('❌ Failed to deactivate old course.');
+          setSnackbarMsg('Failed to deactivate old course.');
           return;
         }
       }
@@ -237,19 +231,19 @@ export default function SuperadminPage() {
     });
 
     if (!error) {
-      setSnackbarMsg('✅ User added to course!');
+      setSnackbarMsg('User added to course!');
       fetchUsersInCourse(selectedCourseId);
       setShowAddUserDialog(false);
       setSelectedAddUserId(null);
       setSetAsActive(false);
     } else {
-      setSnackbarMsg('❌ Failed to add user.');
+      setSnackbarMsg('Failed to add user.');
     }
   };
 
   const handleCreateUser = async () => {
     if (!newUserEmail) {
-      setSnackbarMsg('❌ Email is required.');
+      setSnackbarMsg('Email is required.');
       return;
     }
 
@@ -268,50 +262,60 @@ export default function SuperadminPage() {
     const result = await res.json();
 
     if (res.ok) {
-      setSnackbarMsg('✅ User created!');
+      setSnackbarMsg('User created!');
       setShowCreateUserDialog(false);
       setNewUserEmail('');
       setNewFirstName('');
       setNewLastName('');
       fetchProfiles(); // refresh user list
     } else {
-      setSnackbarMsg(`❌ ${result.error || 'Failed to create user'}`);
+      setSnackbarMsg(result.error || 'Failed to create user');
     }
 
     setCreatingUser(false);
   };
 
+  // --- Delete flow (calls DELETE on /api/create-user) ---
+  const requestDeleteUser = (u: any) => setUserToDelete(u);
+
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/create-user', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userToDelete.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to delete user');
+
+      setUsers((prev) => prev.filter((x) => x.id !== userToDelete.id));
+      setSnackbarMsg('User deleted.');
+      setUserToDelete(null);
+    } catch (err: any) {
+      setSnackbarMsg(err.message || 'Failed to delete user');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <CircularProgress sx={{ m: 5 }} />;
 
-  // 🔁 Was: if (!user || !allowedEmails.includes(user.email)) {
   if (!user || !user.email || !superadminEmails.includes(user.email)) {
     return (
       <Box m={5}>
-        <Typography color="error">🚫 Access Denied</Typography>
+        <Typography color="error">Access Denied</Typography>
       </Box>
     );
   }
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', px: 2, py: 4 }}>
-      {/* Top bar: title + nav back to Admin Dashboard */}
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          mb: 1,
-        }}
-      >
-        <Typography variant="h4" gutterBottom>
-          Superadmin Panel
-        </Typography>
-        <Button
-          component={Link}
-          href="/admin-dashboard"
-          variant="outlined"
-          size="small"
-        >
+      {/* Top bar */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+        <Typography variant="h4" gutterBottom>Superadmin Panel</Typography>
+        <Button component={Link} href="/admin-dashboard" variant="outlined" size="small">
           Admin Dashboard
         </Button>
       </Box>
@@ -332,13 +336,13 @@ export default function SuperadminPage() {
             onClick={() => setShowCreateUserDialog(true)}
             sx={{ mb: 2 }}
           >
-            ➕ Add New User
+            Add New User
           </Button>
 
           {users.map((u) => (
             <Paper key={u.id} sx={{ p: 3, mb: 3 }}>
-              <Typography variant="subtitle1">✉️ {u.email}</Typography>
-              <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+              <Typography variant="subtitle1">{u.email}</Typography>
+              <Box sx={{ display: 'flex', gap: 2, mt: 1, flexWrap: 'wrap' }}>
                 <TextField
                   label="First Name"
                   value={u.first_name || ''}
@@ -372,6 +376,15 @@ export default function SuperadminPage() {
                 >
                   {savingId === u.id ? 'Saving...' : 'Save'}
                 </Button>
+
+                {/* NEW: Delete */}
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => requestDeleteUser(u)}
+                >
+                  Delete
+                </Button>
               </Box>
             </Paper>
           ))}
@@ -399,7 +412,7 @@ export default function SuperadminPage() {
           </FormControl>
 
           <Button variant="outlined" onClick={openAddUserDialog} sx={{ mb: 3 }}>
-            ➕ Add User to Course
+            Add User to Course
           </Button>
 
           {courseLoading ? (
@@ -440,15 +453,14 @@ export default function SuperadminPage() {
             </DialogContent>
 
             <DialogActions>
-              <Button onClick={confirmToggle} variant="contained">
-                Yes
-              </Button>
+              <Button onClick={confirmToggle} variant="contained">Yes</Button>
               <Button onClick={() => setConfirmToggleUser(null)}>Cancel</Button>
             </DialogActions>
           </Dialog>
         </>
       )}
 
+      {/* Add User to Course */}
       <Dialog open={showAddUserDialog} onClose={() => setShowAddUserDialog(false)}>
         <DialogTitle>Add User to Course</DialogTitle>
         <DialogContent>
@@ -467,7 +479,7 @@ export default function SuperadminPage() {
             </Select>
           </FormControl>
 
-          <Box mt={2}>
+          <Box mt={2} display="flex" alignItems="center" gap={1}>
             <Checkbox
               checked={setAsActive}
               onChange={(e) => setSetAsActive(e.target.checked)}
@@ -476,13 +488,12 @@ export default function SuperadminPage() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleAddUser} variant="contained">
-            Add
-          </Button>
+          <Button onClick={handleAddUser} variant="contained">Add</Button>
           <Button onClick={() => setShowAddUserDialog(false)}>Cancel</Button>
         </DialogActions>
       </Dialog>
 
+      {/* Create User */}
       <Dialog open={showCreateUserDialog} onClose={() => setShowCreateUserDialog(false)}>
         <DialogTitle>Add New User</DialogTitle>
         <DialogContent>
@@ -513,6 +524,29 @@ export default function SuperadminPage() {
             {creatingUser ? 'Creating...' : 'Create'}
           </Button>
           <Button onClick={() => setShowCreateUserDialog(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete User confirm */}
+      <Dialog open={!!userToDelete} onClose={() => setUserToDelete(null)}>
+        <DialogTitle>Delete User</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {userToDelete
+              ? `Are you sure you want to permanently delete ${userToDelete.email}? This cannot be undone.`
+              : ''}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={confirmDeleteUser}
+            variant="contained"
+            color="error"
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+          <Button onClick={() => setUserToDelete(null)}>Cancel</Button>
         </DialogActions>
       </Dialog>
 
