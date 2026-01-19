@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
 import {
@@ -60,6 +60,11 @@ interface Props {
   disableRedirect?: boolean;
 }
 
+type CourseInfo = {
+  start_date: string | null;
+  duration_weeks: number | null;
+};
+
 export default function UserDetailView({ userId, courseId, disableRedirect }: Props) {
   const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([]);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
@@ -77,6 +82,7 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [effectiveCourseId, setEffectiveCourseId] = useState<string | null>(null);
   const [courseStartDate, setCourseStartDate] = useState<string | null>(null);
+  const [courseDurationWeeks, setCourseDurationWeeks] = useState<number>(12);
 
   const taskTypeMapping: Record<TaskKeys, string> = {
     asks: 'ask',
@@ -87,206 +93,222 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
     exercises: 'exercise',
   };
 
+  const safeDurationWeeks = useMemo(() => {
+    const w = Number(courseDurationWeeks ?? 12);
+    return Number.isFinite(w) && w >= 1 ? w : 12;
+  }, [courseDurationWeeks]);
+
   useEffect(() => {
-  const getData = async () => {
-    try {
-      setLoading(true);
+    const getData = async () => {
+      try {
+        setLoading(true);
 
-      let actualCourseId = courseId;
-let actualCourseStart: string | null = null;
+        let actualCourseId = courseId;
+        let actualCourseStart: string | null = null;
+        let actualDurationWeeks: number = 12;
 
-if (!actualCourseId) {
-  // fallback: find user's active course
-  const { data: userCourse, error: userCourseError } = await supabase
-    .from('user_courses')
-    .select('course_id')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .single();
+        if (!actualCourseId) {
+          // fallback: find user's active course
+          const { data: userCourse, error: userCourseError } = await supabase
+            .from('user_courses')
+            .select('course_id')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .single();
 
-  console.log('[DEBUG] Active user course lookup:', { userCourse, userCourseError });
+          console.log('[DEBUG] Active user course lookup:', { userCourse, userCourseError });
 
-  if (!userCourse || userCourseError) {
-    console.error('[ERROR] User has no active course in user_courses.');
-    setSnackbarMessage('User has no active course.');
-    setSnackbarOpen(true);
-    setLoading(false);
-    return;
-  }
+          if (!userCourse || userCourseError) {
+            console.error('[ERROR] User has no active course in user_courses.');
+            setSnackbarMessage('User has no active course.');
+            setSnackbarOpen(true);
+            setLoading(false);
+            return;
+          }
 
-  actualCourseId = userCourse.course_id;
-}
-
-// ✅ Fetch start_date for the course (even if it was passed in)
-const { data: course, error: courseError } = await supabase
-  .from('courses')
-  .select('start_date')
-  .eq('course_id', actualCourseId)
-  .single();
-
-console.log('[DEBUG] Fetched course start date:', { course, courseError });
-
-if (!course || courseError) {
-  console.error('[ERROR] Could not fetch course start date.', courseError);
-  setSnackbarMessage('Failed to load course info');
-  setSnackbarOpen(true);
-  setLoading(false);
-  return;
-}
-
-actualCourseStart = course.start_date;
-
-
-      if (!actualCourseId || !actualCourseStart) {
-        console.error('[ERROR] Missing fallback course_id or start_date.', {
-          actualCourseId,
-          actualCourseStart,
-        });
-        setSnackbarMessage('Missing course info');
-        setSnackbarOpen(true);
-        setLoading(false);
-        return;
-      }
-
-      setEffectiveCourseId(actualCourseId);
-      setCourseStartDate(actualCourseStart);
-
-      const endDate = format(new Date(), 'yyyy-MM-dd');
-
-      const { data: weekly, error: weeklyError } = await supabase.rpc('get_weekly_task_counts', {
-        _course_id: actualCourseId,
-        uid: userId,
-      });
-      console.log('[DEBUG] Weekly data:', { weekly, weeklyError });
-
-      if (weekly && Array.isArray(weekly)) {
-        setWeeklyData(weekly);
-
-        const courseStartDateObj = new Date(actualCourseStart);
-        const today = new Date();
-        const diffInDays = Math.floor((today.getTime() - courseStartDateObj.getTime()) / (1000 * 60 * 60 * 24));
-        let weekIndex = Math.floor(diffInDays / 7);
-        weekIndex = Math.max(0, Math.min(11, weekIndex));
-        const weekData = weekly[weekIndex];
-        if (weekData) {
-          setSelectedWeekStart(weekData.week_start);
+          actualCourseId = userCourse.course_id;
         }
-      }
 
-      const { data: taskTypesData } = await supabase
-  .from('task_types')
-  .select('name, minimal_amount, optimal_amount');
+        // Fetch course info (start_date + duration_weeks)
+        const { data: course, error: courseError } = await supabase
+          .from('courses')
+          .select('start_date, duration_weeks')
+          .eq('course_id', actualCourseId)
+          .single<CourseInfo>();
 
-const minimalAmounts: Record<string, number> = {};
-const optimalAmounts: Record<string, number> = {};
+        console.log('[DEBUG] Fetched course info:', { course, courseError });
 
-taskTypesData?.forEach((task) => {
-  minimalAmounts[task.name] = task.minimal_amount;
-  optimalAmounts[task.name] = task.optimal_amount;
-});
+        if (!course || courseError) {
+          console.error('[ERROR] Could not fetch course info.', courseError);
+          setSnackbarMessage('Failed to load course info');
+          setSnackbarOpen(true);
+          setLoading(false);
+          return;
+        }
 
-// store the “goal” numbers once we have them
-setGoals({
-  asks:               optimalAmounts['ask']             ?? 0,
-  follow_ups:         optimalAmounts['follow_up']       ?? 0,
-  open_houses:        optimalAmounts['open_house']      ?? 0,
-  handwritten_cards:  optimalAmounts['handwritten_card']?? 0,
-  action_promises:    optimalAmounts['action_promise']  ?? 0,
-  exercises:          optimalAmounts['exercise']        ?? 0,
-});
+        actualCourseStart = course.start_date;
+        actualDurationWeeks = course.duration_weeks ?? 12;
 
-      const scalingFactors = {
-        asks: 1,
-        follow_ups: minimalAmounts['ask'] / minimalAmounts['follow_up'],
-        open_houses: minimalAmounts['ask'] / minimalAmounts['open_house'],
-        handwritten_cards: minimalAmounts['ask'] / minimalAmounts['handwritten_card'],
-        action_promises: minimalAmounts['ask'] / minimalAmounts['action_promise'],
-        exercises: minimalAmounts['ask'] / minimalAmounts['exercise'],
-      };
+        if (!actualCourseId || !actualCourseStart) {
+          console.error('[ERROR] Missing fallback course_id or start_date.', {
+            actualCourseId,
+            actualCourseStart,
+          });
+          setSnackbarMessage('Missing course info');
+          setSnackbarOpen(true);
+          setLoading(false);
+          return;
+        }
 
-      const { data: dailyData, error: dailyError } = await supabase.rpc(
-        'get_daily_task_counts_all_types_in_range',
-        {
+        setEffectiveCourseId(actualCourseId);
+        setCourseStartDate(actualCourseStart);
+        setCourseDurationWeeks(actualDurationWeeks);
+
+        // Clamp chart end date to the course end (so course doesn't "run forever")
+        const courseStartObj = new Date(actualCourseStart);
+        const courseEndExclusive = new Date(courseStartObj);
+        courseEndExclusive.setDate(courseEndExclusive.getDate() + actualDurationWeeks * 7);
+
+        const now = new Date();
+        const effectiveEnd = now < courseEndExclusive ? now : new Date(courseEndExclusive.getTime() - 1);
+        const endDate = format(effectiveEnd, 'yyyy-MM-dd');
+
+        const { data: weekly, error: weeklyError } = await supabase.rpc('get_weekly_task_counts', {
           _course_id: actualCourseId,
           uid: userId,
-          start_date: actualCourseStart,
-          end_date: endDate,
+        });
+        console.log('[DEBUG] Weekly data:', { weekly, weeklyError });
+
+        if (weekly && Array.isArray(weekly)) {
+          setWeeklyData(weekly);
+
+          // Choose the "current" week (clamped to available weeks)
+          const today = new Date();
+          const diffInDays = Math.floor(
+            (today.getTime() - courseStartObj.getTime()) / (1000 * 60 * 60 * 24)
+          );
+
+          let weekIndex = Math.floor(diffInDays / 7);
+          const maxIndex = Math.max(0, weekly.length - 1);
+
+          if (weekIndex < 0) weekIndex = 0;
+          if (weekIndex > maxIndex) weekIndex = maxIndex;
+
+          const weekData = weekly[weekIndex];
+          if (weekData) setSelectedWeekStart(weekData.week_start);
         }
-      );
-      console.log('[DEBUG] Daily data:', { dailyData, dailyError });
 
-      let running = {
-        asks: 0,
-        follow_ups: 0,
-        open_houses: 0,
-        handwritten_cards: 0,
-        action_promises: 0,
-        exercises: 0,
-        gross_revenue: 0,
-      };
+        const { data: taskTypesData } = await supabase
+          .from('task_types')
+          .select('name, minimal_amount, optimal_amount');
 
-      const baselineDaily = minimalAmounts['ask'] / 7;
+        const minimalAmounts: Record<string, number> = {};
+        const optimalAmounts: Record<string, number> = {};
 
-      const transformed = (dailyData ?? []).map((row: any, index: number) => {
-        running.asks += row.asks;
-        running.follow_ups += row.follow_ups;
-        running.open_houses += row.open_houses;
-        running.handwritten_cards += row.handwritten_cards;
-        running.action_promises += row.action_promises;
-        running.exercises += row.exercises;
-        running.gross_revenue += row.gross_revenue;
+        taskTypesData?.forEach((task: any) => {
+          minimalAmounts[task.name] = task.minimal_amount;
+          optimalAmounts[task.name] = task.optimal_amount;
+        });
 
-        return {
-          day: format(new Date(row.day), 'MMM d'),
-          asks: running.asks * scalingFactors.asks,
-          follow_ups: running.follow_ups * scalingFactors.follow_ups,
-          open_houses: running.open_houses * scalingFactors.open_houses,
-          handwritten_cards: running.handwritten_cards * scalingFactors.handwritten_cards,
-          action_promises: running.action_promises * scalingFactors.action_promises,
-          exercises: running.exercises * scalingFactors.exercises,
-          gross_revenue: running.gross_revenue,
-          baseline: baselineDaily * (index + 1),
+        setGoals({
+          asks: optimalAmounts['ask'] ?? 0,
+          follow_ups: optimalAmounts['follow_up'] ?? 0,
+          open_houses: optimalAmounts['open_house'] ?? 0,
+          handwritten_cards: optimalAmounts['handwritten_card'] ?? 0,
+          action_promises: optimalAmounts['action_promise'] ?? 0,
+          exercises: optimalAmounts['exercise'] ?? 0,
+        });
+
+        const scalingFactors = {
+          asks: 1,
+          follow_ups: (minimalAmounts['ask'] || 1) / (minimalAmounts['follow_up'] || 1),
+          open_houses: (minimalAmounts['ask'] || 1) / (minimalAmounts['open_house'] || 1),
+          handwritten_cards: (minimalAmounts['ask'] || 1) / (minimalAmounts['handwritten_card'] || 1),
+          action_promises: (minimalAmounts['ask'] || 1) / (minimalAmounts['action_promise'] || 1),
+          exercises: (minimalAmounts['ask'] || 1) / (minimalAmounts['exercise'] || 1),
         };
-      });
 
-      setChartData(transformed);
-
-      const { data: pipelineData } = await supabase.rpc(
-        'get_clients_by_client_type',
-        { uid: userId, client_type_name: 'Pipeline' }
-      );
-
-      if (pipelineData) {
-        setPipelineCount(pipelineData.length);
-        const totalRevenue = pipelineData.reduce(
-          (sum: number, c: any) => sum + (c.pipeline_revenue || 0),
-          0
+        const { data: dailyData, error: dailyError } = await supabase.rpc(
+          'get_daily_task_counts_all_types_in_range',
+          {
+            _course_id: actualCourseId,
+            uid: userId,
+            start_date: actualCourseStart,
+            end_date: endDate,
+          }
         );
-        setPipelineRevenue(totalRevenue);
+        console.log('[DEBUG] Daily data:', { dailyData, dailyError });
+
+        let running = {
+          asks: 0,
+          follow_ups: 0,
+          open_houses: 0,
+          handwritten_cards: 0,
+          action_promises: 0,
+          exercises: 0,
+          gross_revenue: 0,
+        };
+
+        const baselineDaily = (minimalAmounts['ask'] || 0) / 7;
+
+        const transformed = (dailyData ?? []).map((row: any, index: number) => {
+          running.asks += row.asks;
+          running.follow_ups += row.follow_ups;
+          running.open_houses += row.open_houses;
+          running.handwritten_cards += row.handwritten_cards;
+          running.action_promises += row.action_promises;
+          running.exercises += row.exercises;
+          running.gross_revenue += row.gross_revenue;
+
+          return {
+            day: format(new Date(row.day), 'MMM d'),
+            asks: running.asks * scalingFactors.asks,
+            follow_ups: running.follow_ups * scalingFactors.follow_ups,
+            open_houses: running.open_houses * scalingFactors.open_houses,
+            handwritten_cards: running.handwritten_cards * scalingFactors.handwritten_cards,
+            action_promises: running.action_promises * scalingFactors.action_promises,
+            exercises: running.exercises * scalingFactors.exercises,
+            gross_revenue: running.gross_revenue,
+            baseline: baselineDaily * (index + 1),
+          };
+        });
+
+        setChartData(transformed);
+
+        const { data: pipelineData } = await supabase.rpc('get_clients_by_client_type', {
+          uid: userId,
+          client_type_name: 'Pipeline',
+        });
+
+        if (pipelineData) {
+          setPipelineCount(pipelineData.length);
+          const totalRevenue = pipelineData.reduce(
+            (sum: number, c: any) => sum + (c.pipeline_revenue || 0),
+            0
+          );
+          setPipelineRevenue(totalRevenue);
+        }
+
+        const { data: grossRevData, error: revError } = await supabase.rpc('get_total_gross_revenue', {
+          uid: userId,
+        });
+        console.log('[DEBUG] Gross revenue:', { grossRevData, revError });
+
+        if (grossRevData) {
+          setTotalGrossRevenue(grossRevData);
+        }
+
+        setLoading(false);
+      } catch (err) {
+        console.error('[FATAL] getData threw an exception:', err);
+        setSnackbarMessage('Unexpected error');
+        setSnackbarOpen(true);
+        setLoading(false);
       }
+    };
 
-      const { data: grossRevData, error: revError } = await supabase.rpc('get_total_gross_revenue', {
-        uid: userId,
-      });
-      console.log('[DEBUG] Gross revenue:', { grossRevData, revError });
-
-      if (grossRevData) {
-        setTotalGrossRevenue(grossRevData);
-      }
-
-      setLoading(false);
-    } catch (err) {
-      console.error('[FATAL] getData threw an exception:', err);
-      setSnackbarMessage('Unexpected error');
-      setSnackbarOpen(true);
-      setLoading(false);
-    }
-  };
-
-  getData();
-}, [userId, courseId]);
-
-
+    getData();
+  }, [userId, courseId]);
 
   const handleCardClick = (key: TaskKeys, value: number) => {
     setSelectedTaskKey(key);
@@ -317,9 +339,7 @@ setGoals({
     if (!error) {
       setWeeklyData((prev) =>
         prev.map((w) =>
-          w.week_start === selectedWeekStart
-            ? { ...w, [selectedTaskKey]: newValue }
-            : w
+          w.week_start === selectedWeekStart ? { ...w, [selectedTaskKey]: newValue } : w
         )
       );
       setSnackbarMessage('Task updated successfully!');
@@ -331,11 +351,9 @@ setGoals({
     setEditModalOpen(false);
   };
 
-if (loading || !goals) return <p>Loading...</p>;
-
+  if (loading || !goals) return <p>Loading...</p>;
 
   const currentWeek = weeklyData.find((w) => w.week_start === selectedWeekStart);
-
 
   const iconMap: Record<TaskKeys, React.ReactNode> = {
     asks: <RecordVoiceOverIcon fontSize="small" />,
@@ -374,7 +392,10 @@ if (loading || !goals) return <p>Loading...</p>;
           (Object.keys(taskTypeMapping) as TaskKeys[]).map((key) => {
             const value = currentWeek[key];
             const goal = goals[key];
-            const percentage = Math.min(100, Math.round((value / goal) * 100));
+
+            const percentage =
+              goal && goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+
             return (
               <Paper
                 key={key}
@@ -455,71 +476,69 @@ if (loading || !goals) return <p>Loading...</p>;
         </DialogActions>
       </Dialog>
 
-      {/* Rest of your component remains the same */}
       <Divider sx={{ my: 3 }} />
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, mb: 2 }}>
-       {disableRedirect ? (
-  <Paper
-    elevation={3}
-    sx={{
-      flex: 1,
-      minWidth: 200,
-      px: 3,
-      py: 2,
-      borderRadius: '16px',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      textDecoration: 'none',
-      transition: 'box-shadow 0.2s ease',
-      '&:hover': {
-        boxShadow: 6,
-        cursor: 'default',
-        backgroundColor: 'inherit',
-      },
-    }}
-  >
-    <Typography variant="body2" sx={{ color: '#666' }}>
-      15/30 Pipeline
-    </Typography>
-    <Typography variant="h6" fontWeight={700} mt={0.5}>
-      {pipelineCount}
-    </Typography>
-  </Paper>
-) : (
-  <Link href="/contacts" passHref legacyBehavior>
-    <Paper
-      component="a"
-      elevation={3}
-      sx={{
-        flex: 1,
-        minWidth: 200,
-        px: 3,
-        py: 2,
-        borderRadius: '16px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textDecoration: 'none',
-        transition: 'box-shadow 0.2s ease',
-        '&:hover': {
-          boxShadow: 6,
-          cursor: 'pointer',
-          backgroundColor: '#f5faff',
-        },
-      }}
-    >
-      <Typography variant="body2" sx={{ color: '#666' }}>
-        15/30 Pipeline
-      </Typography>
-      <Typography variant="h6" fontWeight={700} mt={0.5}>
-        {pipelineCount}
-      </Typography>
-    </Paper>
-  </Link>
-)}
-
+        {disableRedirect ? (
+          <Paper
+            elevation={3}
+            sx={{
+              flex: 1,
+              minWidth: 200,
+              px: 3,
+              py: 2,
+              borderRadius: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textDecoration: 'none',
+              transition: 'box-shadow 0.2s ease',
+              '&:hover': {
+                boxShadow: 6,
+                cursor: 'default',
+                backgroundColor: 'inherit',
+              },
+            }}
+          >
+            <Typography variant="body2" sx={{ color: '#666' }}>
+              15/30 Pipeline
+            </Typography>
+            <Typography variant="h6" fontWeight={700} mt={0.5}>
+              {pipelineCount}
+            </Typography>
+          </Paper>
+        ) : (
+          <Link href="/contacts" passHref legacyBehavior>
+            <Paper
+              component="a"
+              elevation={3}
+              sx={{
+                flex: 1,
+                minWidth: 200,
+                px: 3,
+                py: 2,
+                borderRadius: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textDecoration: 'none',
+                transition: 'box-shadow 0.2s ease',
+                '&:hover': {
+                  boxShadow: 6,
+                  cursor: 'pointer',
+                  backgroundColor: '#f5faff',
+                },
+              }}
+            >
+              <Typography variant="body2" sx={{ color: '#666' }}>
+                15/30 Pipeline
+              </Typography>
+              <Typography variant="h6" fontWeight={700} mt={0.5}>
+                {pipelineCount}
+              </Typography>
+            </Paper>
+          </Link>
+        )}
 
         <Paper
           elevation={3}
@@ -554,8 +573,7 @@ if (loading || !goals) return <p>Loading...</p>;
           {new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
-          }).format(totalGrossRevenue)}{' '}
-          / $20,000
+          }).format(totalGrossRevenue)} / $20,000
         </Typography>
         <Box sx={{ mt: 1 }}>
           <Box
@@ -587,10 +605,7 @@ if (loading || !goals) return <p>Loading...</p>;
         </Typography>
         <div style={{ width: '100%', height: 400 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
-              data={chartData}
-              margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
-            >
+            <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="day" />
               <YAxis domain={[0, 'auto']} />
@@ -614,13 +629,13 @@ if (loading || !goals) return <p>Loading...</p>;
           </ResponsiveContainer>
         </div>
       </Paper>
+
       <Snackbar
         open={snackbarOpen}
         autoHideDuration={3000}
         onClose={() => setSnackbarOpen(false)}
         message={snackbarMessage}
       />
-
     </Box>
   );
 }

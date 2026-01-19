@@ -1,12 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
-import {
-  DataGrid,
-  GridColDef,
-  GridRowModel,
-} from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRowModel } from '@mui/x-data-grid';
 import {
   Box,
   MenuItem,
@@ -19,7 +16,7 @@ import {
   Tooltip,
   Snackbar,
   Alert,
-  Button, // ⬅️ added
+  Button,
 } from '@mui/material';
 import UserDetailView from '@/components/UserDetailView';
 
@@ -38,32 +35,52 @@ const TASK_TYPES: TaskType[] = [
   { key: 'exercises', label: 'Exercises', id: 6 },
 ];
 
+type CourseItem = { id: string; start_date: string; duration_weeks: number };
+
 export default function AdminDashboard() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTaskType, setSelectedTaskType] = useState<TaskType>(TASK_TYPES[0]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+
   const [courseStartDate, setCourseStartDate] = useState<string | null>(null);
   const [currentWeekIndex, setCurrentWeekIndex] = useState<number | null>(null);
+
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
-  const [courses, setCourses] = useState<{ id: string; start_date: string }[]>([]);
+  const [courses, setCourses] = useState<CourseItem[]>([]);
+
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
     severity: 'success' as 'success' | 'error',
   });
 
+  const selectedCourse = useMemo(
+    () => courses.find((c) => c.id === selectedCourseId),
+    [courses, selectedCourseId]
+  );
+
+  const durationWeeks = selectedCourse?.duration_weeks ?? 12;
+
   const fetchCourses = async () => {
     const { data, error } = await supabase
       .from('courses')
-      .select('course_id, start_date')
+      .select('course_id, start_date, duration_weeks')
       .order('start_date', { ascending: false });
 
     if (!error && data && data.length > 0) {
-      setCourses(data.map(c => ({ id: c.course_id, start_date: c.start_date })));
-      setSelectedCourseId(data[0].course_id);
-      setCourseStartDate(data[0].start_date);
+      const mapped: CourseItem[] = data.map((c: any) => ({
+        id: c.course_id,
+        start_date: c.start_date,
+        duration_weeks: c.duration_weeks ?? 12,
+      }));
+
+      setCourses(mapped);
+
+      // default selection
+      setSelectedCourseId(mapped[0].id);
+      setCourseStartDate(mapped[0].start_date);
     }
   };
 
@@ -73,16 +90,25 @@ export default function AdminDashboard() {
 
     try {
       const course = courses.find((c) => c.id === selectedCourseId);
-      if (!course) return;
+      if (!course) {
+        setLoading(false);
+        return;
+      }
 
       setCourseStartDate(course.start_date);
+
+      // Clamp current week highlight to course duration
       const courseStart = new Date(course.start_date);
       const now = new Date();
-      const diffInDays = Math.floor(
-        (now.getTime() - courseStart.getTime()) / (1000 * 60 * 60 * 24),
-      );
-      const weekIndex = Math.floor(diffInDays / 7);
-      setCurrentWeekIndex(weekIndex >= 0 ? weekIndex : null);
+      const diffInDays = Math.floor((now.getTime() - courseStart.getTime()) / (1000 * 60 * 60 * 24));
+      let weekIndex = Math.floor(diffInDays / 7);
+
+      if (weekIndex < 0) {
+        setCurrentWeekIndex(null);
+      } else {
+        const maxIndex = Math.max(0, (course.duration_weeks ?? 12) - 1);
+        setCurrentWeekIndex(Math.min(weekIndex, maxIndex));
+      }
 
       const { data: userCourses, error: ucError } = await supabase
         .from('user_courses')
@@ -106,7 +132,7 @@ export default function AdminDashboard() {
         .select('id, first_name, last_name, role')
         .in('id', userIds);
 
-      const users = (profileData ?? []).filter((p) => p.role === 'user');
+      const users = (profileData ?? []).filter((p: any) => p.role === 'user');
 
       const { data: taskTypeMeta } = await supabase
         .from('task_types')
@@ -116,34 +142,33 @@ export default function AdminDashboard() {
 
       const minimal = taskTypeMeta?.minimal_amount || 1;
 
-      let totalsRow: any = {
+      const totalsRow: any = {
         id: 'totals',
         first_name: '—',
         last_name: 'TOTAL',
         pipeline_count: 0,
         pipeline_revenue: 0,
       };
-      Array.from({ length: 12 }).forEach((_, i) => {
+
+      // Initialize all week columns to 0 based on course duration
+      Array.from({ length: course.duration_weeks ?? 12 }).forEach((_, i) => {
         totalsRow[`week_${i + 1}`] = 0;
       });
 
-      const rowPromises = users.map(async (user) => {
+      const rowPromises = users.map(async (user: any) => {
         const { data: weekly } = await supabase.rpc('get_weekly_task_counts', {
           _course_id: selectedCourseId,
           uid: user.id,
         });
 
-        const { data: pipelineData } = await supabase.rpc(
-          'get_clients_by_client_type',
-          { uid: user.id, client_type_name: 'Pipeline' },
-        );
+        const { data: pipelineData } = await supabase.rpc('get_clients_by_client_type', {
+          uid: user.id,
+          client_type_name: 'Pipeline',
+        });
 
         const pipelineCount = pipelineData?.length || 0;
         const pipelineRevenue =
-          pipelineData?.reduce(
-            (sum: number, c: any) => sum + (Number(c.pipeline_revenue) || 0),
-            0,
-          ) || 0;
+          pipelineData?.reduce((sum: number, c: any) => sum + (Number(c.pipeline_revenue) || 0), 0) || 0;
 
         const row: any = {
           id: user.id,
@@ -153,9 +178,14 @@ export default function AdminDashboard() {
           pipeline_revenue: pipelineRevenue,
         };
 
+        // Pre-fill all week columns (prevents undefined cells)
+        for (let i = 0; i < (course.duration_weeks ?? 12); i++) {
+          row[`week_${i + 1}`] = 0;
+        }
+
         weekly?.forEach((week: any, i: number) => {
           const key = `week_${i + 1}`;
-          const value = week[selectedTaskType.key] ?? 0;
+          const value = week?.[selectedTaskType.key] ?? 0;
           row[key] = value;
           totalsRow[key] = (totalsRow[key] || 0) + value;
         });
@@ -185,10 +215,7 @@ export default function AdminDashboard() {
           .limit(1);
 
         const recentTaskTotal =
-          recentTaskLogs?.reduce(
-            (sum, log) => sum + (log.amount ?? 0),
-            0,
-          ) ?? 0;
+          recentTaskLogs?.reduce((sum: number, log: any) => sum + (log.amount ?? 0), 0) ?? 0;
 
         const isInactive = !anyRecentLogs || anyRecentLogs.length === 0;
 
@@ -207,8 +234,9 @@ export default function AdminDashboard() {
 
       const resolvedRows = (await Promise.all(rowPromises)).filter(Boolean);
 
+      // Make totals cumulative across weeks (based on duration)
       let cumulativeTotal = 0;
-      Array.from({ length: 12 }).forEach((_, i) => {
+      Array.from({ length: course.duration_weeks ?? 12 }).forEach((_, i) => {
         const key = `week_${i + 1}`;
         cumulativeTotal += totalsRow[key] || 0;
         totalsRow[key] = cumulativeTotal;
@@ -232,24 +260,25 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (selectedCourseId) {
+    if (selectedCourseId && courses.length > 0) {
       fetchData();
     }
-  }, [selectedCourseId, selectedTaskType.key]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCourseId, selectedTaskType.key, courses.length]);
 
-  const processRowUpdate = async (
-    newRow: GridRowModel,
-    oldRow: GridRowModel,
-  ) => {
-    if (newRow.id === 'totals' || !courseStartDate || !selectedCourseId)
-      return oldRow;
+  const processRowUpdate = async (newRow: GridRowModel, oldRow: GridRowModel) => {
+    if (newRow.id === 'totals' || !courseStartDate || !selectedCourseId) return oldRow;
 
     const changedWeek = Object.keys(newRow).find(
-      (key) => key.startsWith('week_') && newRow[key] !== oldRow[key],
+      (key) => key.startsWith('week_') && newRow[key] !== oldRow[key]
     );
     if (!changedWeek) return oldRow;
 
     const weekIndex = parseInt(changedWeek.replace('week_', ''), 10);
+
+    // Optional safety: do not allow editing beyond duration
+    if (weekIndex < 1 || weekIndex > durationWeeks) return oldRow;
+
     const weekStartDate = new Date(courseStartDate);
     weekStartDate.setDate(weekStartDate.getDate() + (weekIndex - 1) * 7);
     const weekStart = weekStartDate.toISOString().split('T')[0];
@@ -263,18 +292,10 @@ export default function AdminDashboard() {
     });
 
     if (!error) {
-      setSnackbar({
-        open: true,
-        message: 'Task updated!',
-        severity: 'success',
-      });
+      setSnackbar({ open: true, message: 'Task updated!', severity: 'success' });
       setRows((prev) => prev.map((r) => (r.id === newRow.id ? newRow : r)));
     } else {
-      setSnackbar({
-        open: true,
-        message: 'Update failed',
-        severity: 'error',
-      });
+      setSnackbar({ open: true, message: 'Update failed', severity: 'error' });
     }
 
     return newRow;
@@ -284,21 +305,15 @@ export default function AdminDashboard() {
     setSnackbar({ open: true, message: error.message, severity: 'error' });
   };
 
-  const weekColumns: GridColDef[] = Array.from({ length: 12 }, (_, i) => ({
+  const weekColumns: GridColDef[] = Array.from({ length: durationWeeks }, (_, i) => ({
     field: `week_${i + 1}`,
     width: 60,
     type: 'number',
     align: 'right',
     headerAlign: 'right',
     editable: true,
-    headerClassName:
-      currentWeekIndex !== null && i === currentWeekIndex
-        ? 'current-week-col'
-        : '',
-    cellClassName: (params) =>
-      currentWeekIndex !== null && i === currentWeekIndex
-        ? 'current-week-col'
-        : '',
+    headerClassName: currentWeekIndex !== null && i === currentWeekIndex ? 'current-week-col' : '',
+    cellClassName: () => (currentWeekIndex !== null && i === currentWeekIndex ? 'current-week-col' : ''),
     renderHeader: () => (
       <Tooltip title={`Week ${i + 1} – Task counts since course start`}>
         <span>{`W ${i + 1}`}</span>
@@ -339,6 +354,7 @@ export default function AdminDashboard() {
   ];
 
   if (!mounted) return null;
+
   const selectedUser = rows.find((r) => r.id === selectedUserId);
 
   return (
@@ -353,12 +369,7 @@ export default function AdminDashboard() {
         }}
       >
         <Typography variant="h4">Admin Dashboard</Typography>
-        <Button
-          component={Link}
-          href="/superadmin"
-          variant="outlined"
-          size="small"
-        >
+        <Button component={Link} href="/superadmin" variant="outlined" size="small">
           Superadmin
         </Button>
       </Box>
@@ -373,7 +384,7 @@ export default function AdminDashboard() {
           >
             {courses.map((course) => (
               <MenuItem key={course.id} value={course.id}>
-                {new Date(course.start_date).toLocaleDateString()}
+                {new Date(course.start_date).toLocaleDateString()} ({course.duration_weeks ?? 12}w)
               </MenuItem>
             ))}
           </Select>
@@ -385,9 +396,7 @@ export default function AdminDashboard() {
             value={selectedTaskType.key}
             label="Task Type"
             onChange={(e) => {
-              const selected = TASK_TYPES.find(
-                (t) => t.key === e.target.value,
-              );
+              const selected = TASK_TYPES.find((t) => t.key === e.target.value);
               if (selected) setSelectedTaskType(selected);
             }}
           >
@@ -407,14 +416,13 @@ export default function AdminDashboard() {
           </Box>
         ) : (
           <DataGrid
+            key={`${selectedCourseId}-${durationWeeks}-${selectedTaskType.key}`}
             rows={rows}
             columns={columns}
             autoHeight
             processRowUpdate={processRowUpdate}
             onProcessRowUpdateError={handleProcessRowUpdateError}
-            getRowClassName={(params) =>
-              params.id === 'totals' ? 'totals-row' : ''
-            }
+            getRowClassName={(params) => (params.id === 'totals' ? 'totals-row' : '')}
             sx={{
               borderRadius: 2,
               '& .totals-row': {
@@ -486,14 +494,9 @@ export default function AdminDashboard() {
       {selectedUser && selectedCourseId && (
         <Box mt={4}>
           <Typography variant="h6" gutterBottom>
-            Detailed View for {selectedUser.first_name}{' '}
-            {selectedUser.last_name}
+            Detailed View for {selectedUser.first_name} {selectedUser.last_name}
           </Typography>
-          <UserDetailView
-            userId={selectedUser.id}
-            courseId={selectedCourseId}
-            disableRedirect
-          />
+          <UserDetailView userId={selectedUser.id} courseId={selectedCourseId} disableRedirect />
         </Box>
       )}
     </Box>

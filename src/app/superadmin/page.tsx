@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -22,6 +22,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Divider,
 } from '@mui/material';
 
 const superadminEmails =
@@ -49,9 +50,26 @@ export default function SuperadminPage() {
   const [newLastName, setNewLastName] = useState('');
   const [creatingUser, setCreatingUser] = useState(false);
 
-  // New: delete state
+  // Delete user
   const [userToDelete, setUserToDelete] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Create course
+  const [showCreateCourseDialog, setShowCreateCourseDialog] = useState(false);
+  const [newCourseName, setNewCourseName] = useState('');
+  const [newCourseStartDate, setNewCourseStartDate] = useState(''); // YYYY-MM-DD
+  const [newCourseDurationWeeks, setNewCourseDurationWeeks] = useState<number>(12);
+  const [creatingCourse, setCreatingCourse] = useState(false);
+
+  // NEW: edit selected course
+  const selectedCourse = useMemo(
+    () => courses.find((c) => c.course_id === selectedCourseId) ?? null,
+    [courses, selectedCourseId]
+  );
+  const [courseEditName, setCourseEditName] = useState('');
+  const [courseEditStartDate, setCourseEditStartDate] = useState(''); // YYYY-MM-DD
+  const [courseEditDurationWeeks, setCourseEditDurationWeeks] = useState<number>(12);
+  const [updatingCourse, setUpdatingCourse] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -72,6 +90,7 @@ export default function SuperadminPage() {
       }
     };
     fetchUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchProfiles = async () => {
@@ -82,12 +101,15 @@ export default function SuperadminPage() {
   const fetchCourses = async () => {
     const { data, error } = await supabase
       .from('courses')
-      .select('course_id, start_date');
+      .select('course_id, name, start_date, duration_weeks')
+      .order('start_date', { ascending: false, nullsFirst: false });
+
     if (!error) setCourses(data || []);
   };
 
   const fetchUsersInCourse = async (courseId: string) => {
     setCourseLoading(true);
+
     const { data: links, error: linksError } = await supabase
       .from('user_courses')
       .select('user_id, is_active')
@@ -124,12 +146,12 @@ export default function SuperadminPage() {
         ...u,
         is_active: userIdMap[u.id] ?? false,
       }));
-      // after computing `merged` in fetchUsersInCourse
-merged.sort((a, b) => {
-  const an = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim();
-  const bn = `${b.first_name ?? ''} ${b.last_name ?? ''}`.trim();
-  return an.localeCompare(bn, undefined, { sensitivity: 'base' });
-});
+
+      merged.sort((a, b) => {
+        const an = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim();
+        const bn = `${b.first_name ?? ''} ${b.last_name ?? ''}`.trim();
+        return an.localeCompare(bn, undefined, { sensitivity: 'base' });
+      });
 
       setCourseUsers(merged);
     }
@@ -137,9 +159,7 @@ merged.sort((a, b) => {
     setCourseLoading(false);
   };
 
-  const handleToggleUserActive = (user: any) => {
-    setConfirmToggleUser(user);
-  };
+  const handleToggleUserActive = (u: any) => setConfirmToggleUser(u);
 
   const confirmToggle = async () => {
     if (!confirmToggleUser || !selectedCourseId) return;
@@ -174,31 +194,29 @@ merged.sort((a, b) => {
 
   const openAddUserDialog = async () => {
     if (!selectedCourseId) return;
-  
+
     const { data: allLinks } = await supabase
       .from('user_courses')
       .select('user_id')
       .eq('course_id', selectedCourseId);
-  
+
     const userIdsInCourse = allLinks?.map((l) => l.user_id) ?? [];
-  
+
     const { data: allUsers } = await supabase
       .from('profiles')
       .select('id, first_name, last_name');
-  
+
     const filtered = (allUsers ?? []).filter((u) => !userIdsInCourse.includes(u.id));
-  
-    // NEW: sort A→Z by first_name, then last_name
+
     filtered.sort((a, b) => {
       const an = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim();
       const bn = `${b.first_name ?? ''} ${b.last_name ?? ''}`.trim();
       return an.localeCompare(bn, undefined, { sensitivity: 'base' });
     });
-  
+
     setUsersNotInCourse(filtered);
     setShowAddUserDialog(true);
   };
-  
 
   const handleAddUser = async () => {
     if (!selectedCourseId || !selectedAddUserId) return;
@@ -267,7 +285,7 @@ merged.sort((a, b) => {
       setNewUserEmail('');
       setNewFirstName('');
       setNewLastName('');
-      fetchProfiles(); // refresh user list
+      fetchProfiles();
     } else {
       setSnackbarMsg(result.error || 'Failed to create user');
     }
@@ -275,7 +293,6 @@ merged.sort((a, b) => {
     setCreatingUser(false);
   };
 
-  // --- Delete flow (calls DELETE on /api/create-user) ---
   const requestDeleteUser = (u: any) => setUserToDelete(u);
 
   const confirmDeleteUser = async () => {
@@ -298,6 +315,106 @@ merged.sort((a, b) => {
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleCreateCourse = async () => {
+    if (!newCourseName.trim()) {
+      setSnackbarMsg('Course name is required.');
+      return;
+    }
+    if (newCourseDurationWeeks < 1 || newCourseDurationWeeks > 104) {
+      setSnackbarMsg('Duration must be between 1 and 104 weeks.');
+      return;
+    }
+
+    setCreatingCourse(true);
+
+    const payload: any = {
+      name: newCourseName.trim(),
+      duration_weeks: newCourseDurationWeeks,
+      start_date: newCourseStartDate ? newCourseStartDate : null,
+    };
+
+    const { data, error } = await supabase
+      .from('courses')
+      .insert(payload)
+      .select('course_id')
+      .single();
+
+    if (error) {
+      console.error('Create course error:', error);
+      setSnackbarMsg('Failed to create course.');
+      setCreatingCourse(false);
+      return;
+    }
+
+    setSnackbarMsg('Course created!');
+    setShowCreateCourseDialog(false);
+    setNewCourseName('');
+    setNewCourseStartDate('');
+    setNewCourseDurationWeeks(12);
+
+    await fetchCourses();
+    if (data?.course_id) {
+      setSelectedCourseId(data.course_id);
+      fetchUsersInCourse(data.course_id);
+    }
+
+    setCreatingCourse(false);
+  };
+
+  // NEW: when selected course changes, populate the edit fields
+  useEffect(() => {
+    if (!selectedCourse) {
+      setCourseEditName('');
+      setCourseEditStartDate('');
+      setCourseEditDurationWeeks(12);
+      return;
+    }
+
+    setCourseEditName(selectedCourse.name ?? '');
+    setCourseEditDurationWeeks(
+      typeof selectedCourse.duration_weeks === 'number'
+        ? selectedCourse.duration_weeks
+        : 12
+    );
+    setCourseEditStartDate(selectedCourse.start_date ?? '');
+  }, [selectedCourse]);
+
+  // NEW: update course handler
+  const handleUpdateCourse = async () => {
+    if (!selectedCourseId) return;
+
+    if (!courseEditName.trim()) {
+      setSnackbarMsg('Course name is required.');
+      return;
+    }
+    if (courseEditDurationWeeks < 1 || courseEditDurationWeeks > 104) {
+      setSnackbarMsg('Duration must be between 1 and 104 weeks.');
+      return;
+    }
+
+    setUpdatingCourse(true);
+
+    const { error } = await supabase
+      .from('courses')
+      .update({
+        name: courseEditName.trim(),
+        duration_weeks: courseEditDurationWeeks,
+        start_date: courseEditStartDate ? courseEditStartDate : null,
+      })
+      .eq('course_id', selectedCourseId);
+
+    if (error) {
+      console.error('Update course error:', error);
+      setSnackbarMsg('Failed to update course.');
+      setUpdatingCourse(false);
+      return;
+    }
+
+    setSnackbarMsg('Course updated!');
+    await fetchCourses();
+    setUpdatingCourse(false);
   };
 
   if (loading) return <CircularProgress sx={{ m: 5 }} />;
@@ -377,7 +494,6 @@ merged.sort((a, b) => {
                   {savingId === u.id ? 'Saving...' : 'Save'}
                 </Button>
 
-                {/* NEW: Delete */}
                 <Button
                   variant="outlined"
                   color="error"
@@ -393,34 +509,99 @@ merged.sort((a, b) => {
 
       {selectedTab === 1 && (
         <>
-          <FormControl fullWidth sx={{ mb: 3 }}>
+          <Button
+            variant="outlined"
+            onClick={() => setShowCreateCourseDialog(true)}
+            sx={{ mb: 2 }}
+          >
+            Add New Course
+          </Button>
+
+          <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Select Course</InputLabel>
             <Select
               value={selectedCourseId ?? ''}
               label="Select Course"
               onChange={(e) => {
-                setSelectedCourseId(e.target.value);
-                fetchUsersInCourse(e.target.value);
+                const courseId = e.target.value as string;
+                setSelectedCourseId(courseId);
+                fetchUsersInCourse(courseId);
               }}
             >
-              {courses.map((c) => (
-                <MenuItem key={c.course_id} value={c.course_id}>
-                  {new Date(c.start_date).toLocaleDateString()}
-                </MenuItem>
-              ))}
+              {courses.map((c) => {
+                const dateLabel = c.start_date
+                  ? new Date(`${c.start_date}T00:00:00`).toLocaleDateString()
+                  : 'No start date';
+                return (
+                  <MenuItem key={c.course_id} value={c.course_id}>
+                    {c.name} — {dateLabel} — {c.duration_weeks}w
+                  </MenuItem>
+                );
+              })}
             </Select>
           </FormControl>
 
-          <Button variant="outlined" onClick={openAddUserDialog} sx={{ mb: 3 }}>
+          {/* NEW: edit selected course panel */}
+          {selectedCourseId && (
+            <Paper sx={{ p: 2, mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                Edit Selected Course
+              </Typography>
+
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <TextField
+                  label="Course Name"
+                  value={courseEditName}
+                  onChange={(e) => setCourseEditName(e.target.value)}
+                  sx={{ minWidth: 260 }}
+                />
+
+                <TextField
+                  label="Start Date"
+                  type="date"
+                  value={courseEditStartDate}
+                  onChange={(e) => setCourseEditStartDate(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ minWidth: 220 }}
+                />
+
+                <TextField
+                  label="Duration (weeks)"
+                  type="number"
+                  value={courseEditDurationWeeks}
+                  onChange={(e) => setCourseEditDurationWeeks(Number(e.target.value))}
+                  inputProps={{ min: 1, max: 104 }}
+                  sx={{ minWidth: 220 }}
+                />
+
+                <Button
+                  variant="contained"
+                  onClick={handleUpdateCourse}
+                  disabled={updatingCourse}
+                >
+                  {updatingCourse ? 'Saving...' : 'Save Course'}
+                </Button>
+              </Box>
+            </Paper>
+          )}
+
+          <Divider sx={{ mb: 2 }} />
+
+          <Button
+            variant="outlined"
+            onClick={openAddUserDialog}
+            sx={{ mb: 3 }}
+            disabled={!selectedCourseId}
+          >
             Add User to Course
           </Button>
 
           {courseLoading ? (
             <CircularProgress sx={{ m: 2 }} />
           ) : (
-            courseUsers.map((user) => (
+            courseUsers.map((cu) => (
               <Paper
-                key={user.id}
+                key={cu.id}
                 sx={{
                   p: 2,
                   mb: 2,
@@ -430,11 +611,11 @@ merged.sort((a, b) => {
                 }}
               >
                 <Typography>
-                  {user.first_name} {user.last_name}
+                  {cu.first_name} {cu.last_name}
                 </Typography>
                 <Checkbox
-                  checked={user.is_active}
-                  onChange={() => handleToggleUserActive(user)}
+                  checked={cu.is_active}
+                  onChange={() => handleToggleUserActive(cu)}
                 />
               </Paper>
             ))
@@ -468,7 +649,7 @@ merged.sort((a, b) => {
             <InputLabel>User</InputLabel>
             <Select
               value={selectedAddUserId ?? ''}
-              onChange={(e) => setSelectedAddUserId(e.target.value)}
+              onChange={(e) => setSelectedAddUserId(e.target.value as string)}
               label="User"
             >
               {usersNotInCourse.map((u) => (
@@ -490,6 +671,58 @@ merged.sort((a, b) => {
         <DialogActions>
           <Button onClick={handleAddUser} variant="contained">Add</Button>
           <Button onClick={() => setShowAddUserDialog(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create Course */}
+      <Dialog
+        open={showCreateCourseDialog}
+        onClose={() => setShowCreateCourseDialog(false)}
+      >
+        <DialogTitle>Add New Course</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Course Name"
+            value={newCourseName}
+            onChange={(e) => setNewCourseName(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+
+          <TextField
+            fullWidth
+            label="Start Date"
+            type="date"
+            value={newCourseStartDate}
+            onChange={(e) => setNewCourseStartDate(e.target.value)}
+            sx={{ mt: 2 }}
+            InputLabelProps={{ shrink: true }}
+            helperText="Optional"
+          />
+
+          <TextField
+            fullWidth
+            label="Duration (weeks)"
+            type="number"
+            value={newCourseDurationWeeks}
+            onChange={(e) => setNewCourseDurationWeeks(Number(e.target.value))}
+            sx={{ mt: 2 }}
+            inputProps={{ min: 1, max: 104 }}
+            helperText="1–104 weeks"
+          />
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={handleCreateCourse}
+            variant="contained"
+            disabled={creatingCourse}
+          >
+            {creatingCourse ? 'Creating...' : 'Create'}
+          </Button>
+          <Button onClick={() => setShowCreateCourseDialog(false)}>
+            Cancel
+          </Button>
         </DialogActions>
       </Dialog>
 
