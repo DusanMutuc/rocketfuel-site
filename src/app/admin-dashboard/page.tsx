@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { fetchOrderedCourses } from '@/lib/courseOrder';
 import Link from 'next/link';
 import { DataGrid, GridColDef, GridRowModel } from '@mui/x-data-grid';
 import {
@@ -35,7 +36,7 @@ const TASK_TYPES: TaskType[] = [
   { key: 'exercises', label: 'Exercises', id: 6 },
 ];
 
-type CourseItem = { id: string; start_date: string; duration_weeks: number };
+type CourseItem = { id: string; name: string; start_date: string; duration_weeks: number };
 
 export default function AdminDashboard() {
   const [rows, setRows] = useState<any[]>([]);
@@ -64,23 +65,25 @@ export default function AdminDashboard() {
   const durationWeeks = selectedCourse?.duration_weeks ?? 12;
 
   const fetchCourses = async () => {
-    const { data, error } = await supabase
-      .from('courses')
-      .select('course_id, start_date, duration_weeks')
-      .order('start_date', { ascending: false });
+    try {
+      const orderedCourses = await fetchOrderedCourses(supabase);
+      const mapped: CourseItem[] = orderedCourses
+        .filter((c) => !!c.start_date)
+        .map((c) => ({
+          id: c.course_id,
+          name: c.name,
+          start_date: c.start_date as string,
+          duration_weeks: c.duration_weeks,
+        }));
 
-    if (!error && data && data.length > 0) {
-      const mapped: CourseItem[] = data.map((c: any) => ({
-        id: c.course_id,
-        start_date: c.start_date,
-        duration_weeks: c.duration_weeks ?? 12,
-      }));
+      if (mapped.length === 0) return;
 
       setCourses(mapped);
-
-      // default selection
       setSelectedCourseId(mapped[0].id);
       setCourseStartDate(mapped[0].start_date);
+    } catch (error) {
+      console.error('Failed to load courses:', error);
+      setSnackbar({ open: true, message: 'Failed to load courses', severity: 'error' });
     }
   };
 
@@ -384,7 +387,7 @@ export default function AdminDashboard() {
           >
             {courses.map((course) => (
               <MenuItem key={course.id} value={course.id}>
-                {new Date(course.start_date).toLocaleDateString()} ({course.duration_weeks ?? 12}w)
+                {course.name} — {new Date(course.start_date).toLocaleDateString()} ({course.duration_weeks ?? 12}w)
               </MenuItem>
             ))}
           </Select>

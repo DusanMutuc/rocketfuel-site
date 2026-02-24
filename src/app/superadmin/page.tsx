@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { fetchOrderedCourses, type OrderedCourse } from '@/lib/courseOrder';
 import {
   Box,
   Typography,
@@ -31,7 +32,7 @@ const superadminEmails =
 export default function SuperadminPage() {
   const [user, setUser] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
+  const [courses, setCourses] = useState<OrderedCourse[]>([]);
   const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(true); // page-wide loading
   const [courseLoading, setCourseLoading] = useState(false); // course fetch loading
@@ -70,6 +71,7 @@ export default function SuperadminPage() {
   const [courseEditStartDate, setCourseEditStartDate] = useState(''); // YYYY-MM-DD
   const [courseEditDurationWeeks, setCourseEditDurationWeeks] = useState<number>(12);
   const [updatingCourse, setUpdatingCourse] = useState(false);
+  const [savingCourseOrder, setSavingCourseOrder] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -99,12 +101,51 @@ export default function SuperadminPage() {
   };
 
   const fetchCourses = async () => {
-    const { data, error } = await supabase
-      .from('courses')
-      .select('course_id, name, start_date, duration_weeks')
-      .order('start_date', { ascending: false, nullsFirst: false });
+    try {
+      const orderedCourses = await fetchOrderedCourses(supabase);
+      setCourses(orderedCourses);
+    } catch (error) {
+      console.error('Error loading courses:', error);
+      setSnackbarMsg('Failed to load courses.');
+    }
+  };
 
-    if (!error) setCourses(data || []);
+  const moveCourse = (courseId: string, direction: 'up' | 'down') => {
+    setCourses((prev) => {
+      const index = prev.findIndex((c) => c.course_id === courseId);
+      if (index < 0) return prev;
+
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= prev.length) return prev;
+
+      const copy = [...prev];
+      const tmp = copy[index];
+      copy[index] = copy[swapIndex];
+      copy[swapIndex] = tmp;
+      return copy;
+    });
+  };
+
+  const persistCourseOrder = async () => {
+    setSavingCourseOrder(true);
+    try {
+      const ids = courses.map((c) => Number(c.course_id));
+      if (ids.some((id) => !Number.isInteger(id))) {
+        setSnackbarMsg('Could not save order: one or more course IDs are not numeric.');
+        return;
+      }
+
+      const { error } = await supabase.rpc('set_course_order', { _course_ids: ids });
+      if (error) throw error;
+
+      setSnackbarMsg('Course order saved.');
+      await fetchCourses();
+    } catch (error) {
+      console.error('Failed to save course order:', error);
+      setSnackbarMsg('Failed to save course order.');
+    } finally {
+      setSavingCourseOrder(false);
+    }
   };
 
   const fetchUsersInCourse = async (courseId: string) => {
@@ -365,6 +406,12 @@ export default function SuperadminPage() {
 
   // NEW: when selected course changes, populate the edit fields
   useEffect(() => {
+    if (!selectedCourseId && courses.length > 0) {
+      setSelectedCourseId(courses[0].course_id);
+    }
+  }, [courses, selectedCourseId]);
+
+  useEffect(() => {
     if (!selectedCourse) {
       setCourseEditName('');
       setCourseEditStartDate('');
@@ -516,6 +563,56 @@ export default function SuperadminPage() {
           >
             Add New Course
           </Button>
+
+          <Paper sx={{ p: 2, mb: 2 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+              Course Order (used by /courses)
+            </Typography>
+            {courses.map((c, index) => (
+              <Box
+                key={c.course_id}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  py: 0.5,
+                  borderBottom: index === courses.length - 1 ? 'none' : '1px solid',
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography>
+                  {index + 1}. {c.name}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => moveCourse(c.course_id, 'up')}
+                    disabled={index === 0}
+                  >
+                    Up
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => moveCourse(c.course_id, 'down')}
+                    disabled={index === courses.length - 1}
+                  >
+                    Down
+                  </Button>
+                </Box>
+              </Box>
+            ))}
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="contained"
+                onClick={persistCourseOrder}
+                disabled={savingCourseOrder || courses.length === 0}
+              >
+                {savingCourseOrder ? 'Saving order...' : 'Save course order'}
+              </Button>
+            </Box>
+          </Paper>
 
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Select Course</InputLabel>
