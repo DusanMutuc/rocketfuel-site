@@ -242,7 +242,7 @@ export default function SuperadminPage() {
     }
   };
 
-  const handleExportAllUserKpis = async () => {
+  const handleExportCourseKpiReportsZip = async () => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -252,30 +252,37 @@ export default function SuperadminPage() {
       return;
     }
 
-    if (users.length === 0) {
-      setSnackbarMsg('No users found to export.');
+    if (!selectedCourseId) {
+      setSnackbarMsg('Please select a course first.');
       return;
     }
 
     try {
-      for (const u of users) {
-        const first = (u.first_name ?? '').trim();
-        const last = (u.last_name ?? '').trim();
-        const fullName = `${first} ${last}`.trim() || 'Unnamed User';
-        const safeName = fullName.replace(/[<>:\"/\\\\|?*]+/g, ' ').replace(/\\s+/g, ' ').trim();
+      const query = new URLSearchParams({ course_id: selectedCourseId });
+      const response = await fetch(`/api/exports/superadmin-course-kpis-zip?${query.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
-        await downloadUserExport(
-          session.access_token,
-          u.id,
-          'kpis',
-          `${safeName}.csv`
-        );
+      if (!response.ok) {
+        throw new Error('Failed to export course KPI zip.');
       }
 
-      setSnackbarMsg('Started KPI exports for all users.');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `course-kpi-reports-${selectedCourseId}-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setSnackbarMsg('Downloaded KPI reports zip for selected course.');
     } catch (err) {
       console.error(err);
-      setSnackbarMsg('Failed while exporting KPI reports for all users.');
+      setSnackbarMsg('Failed while exporting course KPI reports.');
     }
   };
 
@@ -553,12 +560,6 @@ export default function SuperadminPage() {
             >
               Add New User
             </Button>
-            <Button
-              variant="outlined"
-              onClick={handleExportAllUserKpis}
-            >
-              Export All KPI Reports
-            </Button>
             <TextField
               label="Search users"
               placeholder="Search by name or email"
@@ -659,6 +660,15 @@ export default function SuperadminPage() {
               })}
             </Select>
           </FormControl>
+
+          <Button
+            variant="outlined"
+            onClick={handleExportCourseKpiReportsZip}
+            sx={{ mb: 2 }}
+            disabled={!selectedCourseId}
+          >
+            Export Selected Course KPI Reports (ZIP)
+          </Button>
 
           {/* NEW: edit selected course panel */}
           {selectedCourseId && (
