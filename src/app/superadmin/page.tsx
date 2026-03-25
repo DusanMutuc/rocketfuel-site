@@ -196,7 +196,8 @@ export default function SuperadminPage() {
   const downloadUserExport = async (
     accessToken: string,
     userId: string,
-    dataset: 'contacts' | 'pipeline' | 'kpis'
+    dataset: 'contacts' | 'pipeline' | 'kpis',
+    customFileName?: string
   ) => {
     const query = new URLSearchParams({ user_id: userId, dataset });
     const response = await fetch(`/api/exports/superadmin-user-data?${query.toString()}`, {
@@ -213,7 +214,7 @@ export default function SuperadminPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${dataset}-export-${userId}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = customFileName ?? `${dataset}-export-${userId}-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -238,6 +239,43 @@ export default function SuperadminPage() {
     } catch (err) {
       console.error(err);
       setSnackbarMsg('Failed to export one or more data files for this user.');
+    }
+  };
+
+  const handleExportAllUserKpis = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSnackbarMsg('You must be logged in to export KPI reports.');
+      return;
+    }
+
+    if (users.length === 0) {
+      setSnackbarMsg('No users found to export.');
+      return;
+    }
+
+    try {
+      for (const u of users) {
+        const first = (u.first_name ?? '').trim();
+        const last = (u.last_name ?? '').trim();
+        const fullName = `${first} ${last}`.trim() || 'Unnamed User';
+        const safeName = fullName.replace(/[<>:\"/\\\\|?*]+/g, ' ').replace(/\\s+/g, ' ').trim();
+
+        await downloadUserExport(
+          session.access_token,
+          u.id,
+          'kpis',
+          `${safeName}.csv`
+        );
+      }
+
+      setSnackbarMsg('Started KPI exports for all users.');
+    } catch (err) {
+      console.error(err);
+      setSnackbarMsg('Failed while exporting KPI reports for all users.');
     }
   };
 
@@ -514,6 +552,12 @@ export default function SuperadminPage() {
               onClick={() => setShowCreateUserDialog(true)}
             >
               Add New User
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleExportAllUserKpis}
+            >
+              Export All KPI Reports
             </Button>
             <TextField
               label="Search users"
