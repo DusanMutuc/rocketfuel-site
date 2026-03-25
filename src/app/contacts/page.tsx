@@ -61,6 +61,38 @@ export default function ContactsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportPipelineCsv = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      alert('You need to be logged in to export pipeline contacts.');
+      return;
+    }
+
+    const response = await fetch('/api/exports/pipeline-csv', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      alert('Failed to export pipeline contacts.');
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pipeline-15-30-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
       {/* Back button */}
@@ -99,15 +131,24 @@ export default function ContactsPage() {
         </Box>
 
         {tabIndex === 1 && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setIsAddOpen(true)}
-            type="button"
-  sx={{ textTransform: 'none', fontSize: 16 }}
-          >
-            Add Prospect to Pipeline
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              onClick={handleExportPipelineCsv}
+              sx={{ textTransform: 'none' }}
+            >
+              Export 15/30 Pipeline
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setIsAddOpen(true)}
+              type="button"
+              sx={{ textTransform: 'none', fontSize: 16 }}
+            >
+              Add Prospect to Pipeline
+            </Button>
+          </Box>
         )}
       </Box>
       <Divider sx={{ mb: 3 }} />
