@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/lib/exports/adminClient';
 import { createZip } from '@/lib/exports/zip';
 import { kpiCsvHeaders, mapWeeklyRowToKpiCsvRow } from '@/lib/exports/kpis';
 import { toCsv } from '@/lib/exports/csv';
+import { contactCsvHeaders, mapAgentToContactCsvRow, mapClientToContactCsvRow } from '@/lib/exports/contacts';
+import { mapPipelineClientToCsvRow, pipelineCsvHeaders } from '@/lib/exports/pipeline';
 
 const superadminEmails = process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';') ?? [];
 
@@ -80,17 +82,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: weeklyError.message }, { status: 500 });
     }
 
-    const rows = (weekly ?? []).map((row: any) => mapWeeklyRowToKpiCsvRow(row));
-    const csv = toCsv(rows, kpiCsvHeaders);
+    const kpiRows = (weekly ?? []).map((row: any) => mapWeeklyRowToKpiCsvRow(row));
+    const kpiCsv = toCsv(kpiRows, kpiCsvHeaders);
+
+    const [prospectsResult, soiResult, agentsResult, pipelineResult] = await Promise.all([
+      supabaseAdmin.rpc('get_clients_by_client_type', { uid: userId, client_type_name: 'Prospect' }),
+      supabaseAdmin.rpc('get_clients_by_client_type', { uid: userId, client_type_name: 'SOI' }),
+      supabaseAdmin.rpc('get_agents_by_user', { uid: userId }),
+      supabaseAdmin.rpc('get_clients_by_client_type', { uid: userId, client_type_name: 'Pipeline' }),
+    ]);
+
+    if (prospectsResult.error || soiResult.error || agentsResult.error || pipelineResult.error) {
+      const errorMessage =
+        prospectsResult.error?.message ||
+        soiResult.error?.message ||
+        agentsResult.error?.message ||
+        pipelineResult.error?.message ||
+        'Failed to build user export data';
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+
+    const contactRows = [
+      ...(prospectsResult.data ?? []).map((c: any) => mapClientToContactCsvRow(c, 'Prospect')),
+      ...(soiResult.data ?? []).map((c: any) => mapClientToContactCsvRow(c, 'SOI')),
+      ...(agentsResult.data ?? []).map((a: any) => mapAgentToContactCsvRow(a)),
+    ];
+    const contactsCsv = toCsv(contactRows, contactCsvHeaders);
+
+    const pipelineRows = (pipelineResult.data ?? []).map((p: any) => mapPipelineClientToCsvRow(p));
+    const pipelineCsv = toCsv(pipelineRows, pipelineCsvHeaders);
 
     const profile = profileById.get(userId);
     const base = safeBaseName(profile?.first_name ?? null, profile?.last_name ?? null);
 
     const count = (usedNames.get(base) ?? 0) + 1;
     usedNames.set(base, count);
-    const fileName = count === 1 ? `${base}.csv` : `${base} (${count}).csv`;
+    const folderName = count === 1 ? base : `${base} (${count})`;
 
-    files.push({ name: fileName, content: csv });
+    files.push(
+      { name: `${folderName}/kpis.csv`, content: kpiCsv },
+      { name: `${folderName}/contacts.csv`, content: contactsCsv },
+      { name: `${folderName}/pipeline.csv`, content: pipelineCsv }
+    );
   }
 
   const zipBytes = createZip(files);
@@ -100,7 +133,7 @@ export async function GET(request: NextRequest) {
     status: 200,
     headers: {
       'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="course-kpi-reports-${courseId}-${today}.zip"`,
+      'Content-Disposition': `attachment; filename="course-data-reports-${courseId}-${today}.zip"`,
       'Cache-Control': 'no-store',
     },
   });

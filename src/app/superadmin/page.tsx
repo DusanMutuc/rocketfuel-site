@@ -242,13 +242,13 @@ export default function SuperadminPage() {
     }
   };
 
-  const handleExportCourseKpiReportsZip = async () => {
+  const handleExportCourseDataReportsZip = async () => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
     if (!session?.access_token) {
-      setSnackbarMsg('You must be logged in to export KPI reports.');
+      setSnackbarMsg('You must be logged in to export course data reports.');
       return;
     }
 
@@ -266,23 +266,23 @@ export default function SuperadminPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to export course KPI zip.');
+        throw new Error('Failed to export course data zip.');
       }
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `course-kpi-reports-${selectedCourseId}-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `course-data-reports-${selectedCourseId}-${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
 
-      setSnackbarMsg('Downloaded KPI reports zip for selected course.');
+      setSnackbarMsg('Downloaded data reports zip for selected course.');
     } catch (err) {
       console.error(err);
-      setSnackbarMsg('Failed while exporting course KPI reports.');
+      setSnackbarMsg('Failed while exporting selected course reports.');
     }
   };
 
@@ -663,11 +663,11 @@ export default function SuperadminPage() {
 
           <Button
             variant="outlined"
-            onClick={handleExportCourseKpiReportsZip}
+            onClick={handleExportCourseDataReportsZip}
             sx={{ mb: 2 }}
             disabled={!selectedCourseId}
           >
-            Export Selected Course KPI Reports (ZIP)
+            Export Selected Course Data Reports (ZIP)
           </Button>
 
           {/* NEW: edit selected course panel */}
