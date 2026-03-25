@@ -14,6 +14,7 @@ import PipelineTab from '@/components/PipelineTab';
 import ContactsTab from '@/components/ContactsTab';
 import AddIcon from '@mui/icons-material/Add';
 import AddProspectModal from '@/components/AddProspectModal';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function ContactsPage() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -26,6 +27,38 @@ export default function ContactsPage() {
 
   const triggerRefresh = () => {
     setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleExportContactsCsv = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      alert('You need to be logged in to export contacts.');
+      return;
+    }
+
+    const response = await fetch('/api/exports/contacts-csv', {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      alert('Failed to export contacts.');
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `contacts-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -51,10 +84,19 @@ export default function ContactsPage() {
 
       {/* Tabs and Add Button */}
       <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Tabs value={tabIndex} onChange={handleTabChange} aria-label="contacts tabs">
-          <Tab label="All Contacts" />
-          <Tab label="Pipeline (15/30)" />
-        </Tabs>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Tabs value={tabIndex} onChange={handleTabChange} aria-label="contacts tabs">
+            <Tab label="All Contacts" />
+            <Tab label="Pipeline (15/30)" />
+          </Tabs>
+          <Button
+            variant="outlined"
+            onClick={handleExportContactsCsv}
+            sx={{ textTransform: 'none' }}
+          >
+            Export Contacts CSV
+          </Button>
+        </Box>
 
         {tabIndex === 1 && (
           <Button

@@ -351,6 +351,43 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
     setEditModalOpen(false);
   };
 
+  const handleExportKpiCsv = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSnackbarMessage('You need to be logged in to export KPIs.');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const query = new URLSearchParams();
+    if (effectiveCourseId) query.set('course_id', effectiveCourseId);
+
+    const response = await fetch(`/api/exports/kpis-csv?${query.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    if (!response.ok) {
+      setSnackbarMessage('Failed to export KPI CSV.');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kpis-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading || !goals) return <p>Loading...</p>;
 
   const currentWeek = weeklyData.find((w) => w.week_start === selectedWeekStart);
@@ -366,9 +403,14 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
-      <Typography variant="h4" fontWeight={600} gutterBottom>
-        Your Progress Overview
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center', mb: 1 }}>
+        <Typography variant="h4" fontWeight={600} gutterBottom>
+          Your Progress Overview
+        </Typography>
+        <Button variant="outlined" onClick={handleExportKpiCsv} sx={{ textTransform: 'none' }}>
+          Export KPI CSV
+        </Button>
+      </Box>
 
       <FormControl sx={{ minWidth: 160, mb: 3 }} size="small">
         <InputLabel id="week-select-label">Week</InputLabel>
