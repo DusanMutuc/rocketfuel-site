@@ -49,6 +49,7 @@ export default function SuperadminPage() {
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [creatingUser, setCreatingUser] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
 
   // Delete user
   const [userToDelete, setUserToDelete] = useState<any | null>(null);
@@ -191,6 +192,110 @@ export default function SuperadminPage() {
     setSnackbarMsg(error ? 'Update failed.' : 'Name updated!');
     setSavingId(null);
   };
+
+  const downloadUserExport = async (
+    accessToken: string,
+    userId: string,
+    dataset: 'contacts' | 'pipeline' | 'kpis',
+    customFileName?: string
+  ) => {
+    const query = new URLSearchParams({ user_id: userId, dataset });
+    const response = await fetch(`/api/exports/superadmin-user-data?${query.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to export ${dataset} for user`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = customFileName ?? `${dataset}-export-${userId}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportUserData = async (targetUserId: string) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSnackbarMsg('You must be logged in to export user data.');
+      return;
+    }
+
+    try {
+      await downloadUserExport(session.access_token, targetUserId, 'contacts');
+      await downloadUserExport(session.access_token, targetUserId, 'pipeline');
+      await downloadUserExport(session.access_token, targetUserId, 'kpis');
+      setSnackbarMsg('Started export for contacts, pipeline, and KPIs.');
+    } catch (err) {
+      console.error(err);
+      setSnackbarMsg('Failed to export one or more data files for this user.');
+    }
+  };
+
+  const handleExportCourseDataReportsZip = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSnackbarMsg('You must be logged in to export course data reports.');
+      return;
+    }
+
+    if (!selectedCourseId) {
+      setSnackbarMsg('Please select a course first.');
+      return;
+    }
+
+    try {
+      const query = new URLSearchParams({ course_id: selectedCourseId });
+      const response = await fetch(`/api/exports/superadmin-course-kpis-zip?${query.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export course data zip.');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `course-data-reports-${selectedCourseId}-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setSnackbarMsg('Downloaded data reports zip for selected course.');
+    } catch (err) {
+      console.error(err);
+      setSnackbarMsg('Failed while exporting selected course reports.');
+    }
+  };
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    if (!q) return users;
+
+    return users.filter((u) => {
+      const fullName = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim().toLowerCase();
+      const email = (u.email ?? '').toLowerCase();
+      return fullName.includes(q) || email.includes(q);
+    });
+  }, [users, userSearch]);
 
   const openAddUserDialog = async () => {
     if (!selectedCourseId) return;
@@ -448,15 +553,23 @@ export default function SuperadminPage() {
 
       {selectedTab === 0 && (
         <>
-          <Button
-            variant="outlined"
-            onClick={() => setShowCreateUserDialog(true)}
-            sx={{ mb: 2 }}
-          >
-            Add New User
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2, flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              onClick={() => setShowCreateUserDialog(true)}
+            >
+              Add New User
+            </Button>
+            <TextField
+              label="Search users"
+              placeholder="Search by name or email"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              sx={{ minWidth: 320 }}
+            />
+          </Box>
 
-          {users.map((u) => (
+          {filteredUsers.map((u) => (
             <Paper key={u.id} sx={{ p: 3, mb: 3 }}>
               <Typography variant="subtitle1">{u.email}</Typography>
               <Box sx={{ display: 'flex', gap: 2, mt: 1, flexWrap: 'wrap' }}>
@@ -501,6 +614,13 @@ export default function SuperadminPage() {
                 >
                   Delete
                 </Button>
+
+                <Button
+                  variant="outlined"
+                  onClick={() => handleExportUserData(u.id)}
+                >
+                  Export Data
+                </Button>
               </Box>
             </Paper>
           ))}
@@ -540,6 +660,15 @@ export default function SuperadminPage() {
               })}
             </Select>
           </FormControl>
+
+          <Button
+            variant="outlined"
+            onClick={handleExportCourseDataReportsZip}
+            sx={{ mb: 2 }}
+            disabled={!selectedCourseId}
+          >
+            Export Selected Course Data Reports (ZIP)
+          </Button>
 
           {/* NEW: edit selected course panel */}
           {selectedCourseId && (
