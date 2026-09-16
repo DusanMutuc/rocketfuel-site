@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import AchievementCatalogAdmin from '@/components/AchievementCatalogAdmin';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Box,
@@ -23,6 +24,7 @@ import {
   DialogContent,
   DialogActions,
   Divider,
+  Alert,
 } from '@mui/material';
 
 const superadminEmails =
@@ -444,7 +446,10 @@ export default function SuperadminPage() {
       <Tabs value={selectedTab} onChange={(_, val) => setSelectedTab(val)} sx={{ mb: 3 }}>
         <Tab label="Users" />
         <Tab label="Courses" />
+        <Tab label="Achievements" />
       </Tabs>
+
+      {selectedTab === 2 && <AchievementCatalogAdmin />}
 
       {selectedTab === 0 && (
         <>
@@ -509,6 +514,7 @@ export default function SuperadminPage() {
 
       {selectedTab === 1 && (
         <>
+          <Alert severity="info" sx={{ mb: 2 }}>For a retake, add the member to a new dated course. Reactivating an existing enrollment resumes that attempt, including its activity and achievements.</Alert>
           <Button
             variant="outlined"
             onClick={() => setShowCreateCourseDialog(true)}
