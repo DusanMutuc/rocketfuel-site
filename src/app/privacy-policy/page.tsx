@@ -1,15 +1,27 @@
-// pages/privacy-policy.tsx
-import Head from 'next/head';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Rocket Fuel Privacy Policy | Twenty New Clients Inc.',
+};
 
 export default function PrivacyPolicy() {
   return (
     <>
-      <Head>
-        <title>Privacy Policy | Real Estate Rocket Fuel</title>
-      </Head>
       <main style={styles.container}>
-        <h1 style={styles.heading}>Privacy Policy</h1>
+        <h1 style={styles.heading}>Rocket Fuel Privacy Policy</h1>
         <p><strong>Effective Date:</strong> June 19, 2025</p>
+        <p><strong>Last Updated:</strong> September 16, 2026</p>
+
+        <p>
+          This Privacy Policy applies to the Rocket Fuel mobile application (Android package:{' '}
+          <strong>com.twentynewclients.rocketfuel</strong>) and the related Rocket Fuel coaching
+          service provided by <strong>Twenty New Clients Inc.</strong> (&ldquo;we,&rdquo;
+          &ldquo;us,&rdquo; or &ldquo;our&rdquo;).
+        </p>
+        <p>
+          This policy explains how we collect, use, store, and disclose personal information
+          when you use Rocket Fuel.
+        </p>
 
         <section style={styles.section}>
           <h2 style={styles.subheading}>1. Information We Collect</h2>
@@ -22,15 +34,16 @@ export default function PrivacyPolicy() {
         <section style={styles.section}>
           <h2 style={styles.subheading}>2. How We Use Your Data</h2>
           <p>
-            Your data is used only to track your progress in the programme. We do not sell or share your data with third
-            parties, and we do not run ads or track you across apps.
+            We use your data to provide your Rocket Fuel account and track your progress in the programme.
+            We do not sell your data, and we do not run ads or track you across apps.
           </p>
         </section>
 
         <section style={styles.section}>
           <h2 style={styles.subheading}>3. Data Sharing</h2>
           <p>
-            We use Supabase to securely store your data. We ensure it is handled according to best practices.
+            We use Supabase as a service provider to authenticate accounts and securely store your data
+            on our behalf.
           </p>
         </section>
 
@@ -45,7 +58,7 @@ export default function PrivacyPolicy() {
           <h2 style={styles.subheading}>5. Your Rights</h2>
           <p>
             You can request access, correction, or deletion of your data by contacting us at{' '}
-            <strong>admin@rebootmember.com</strong>.
+            <a href="mailto:admin@rebootmembers.com">admin@rebootmembers.com</a>.
           </p>
         </section>
 
@@ -59,8 +72,8 @@ export default function PrivacyPolicy() {
         <section style={styles.section}>
           <h2 style={styles.subheading}>7. Contact</h2>
           <p>
-            For questions or data requests, contact us at{' '}
-            <strong>admin@rebootmember.com</strong>.
+            For privacy questions or data requests, contact Twenty New Clients Inc. at{' '}
+            <a href="mailto:admin@rebootmembers.com">admin@rebootmembers.com</a>.
           </p>
         </section>
       </main>
