@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
+import { safeReportReturn } from '@/lib/reports/milestoneFormat';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -41,6 +42,9 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
+
+    const reportReturn = safeReportReturn(new URLSearchParams(window.location.search).get('next'));
+    if (reportReturn) { router.replace(reportReturn); setLoading(false); return; }
 
     if (user.email && superadminEmails?.includes(user.email)) {
       router.push('/superadmin');

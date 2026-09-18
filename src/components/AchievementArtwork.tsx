@@ -1,12 +1,13 @@
-import React, { useId, useMemo } from 'react';
+import React, { useId } from 'react';
 import { MEDAL_MATERIALS, tierNumber, defaultMedalShape, type MedalShape, type AchievementTier, type BadgeArtwork } from '../lib/achievements/badgeDesign';
 import { CUSTOM_BADGE_ART } from '../lib/achievements/customBadgeArt';
 import phosphor from '../lib/achievements/phosphor-duotone.json';
 const phosphorSymbol = (artwork: string): string | undefined => (phosphor as Record<string, string>)[artwork];
 
 // Original vector flight patches: crisp at collection, detail and celebration sizes.
-const AchievementArtwork = ({ artwork, shape: medalShape, tier = 'gold', size = 140, earned = true }: { artwork: BadgeArtwork; shape?: MedalShape; tier?: AchievementTier; size?: number; earned?: boolean }) => {
-  const id = useId().replace(/:/g, '');
+export type AchievementArtworkProps = { artwork: BadgeArtwork; shape?: MedalShape; tier?: AchievementTier; size?: number; earned?: boolean };
+// Pure SVG tree shared by the interactive UI and the private PDF renderer.
+export const createAchievementArtwork = ({ artwork, shape: medalShape, tier = 'gold', size = 140, earned = true, id }: AchievementArtworkProps & { id: string }) => {
   const material = MEDAL_MATERIALS[tier] ?? MEDAL_MATERIALS.gold;
   const gold = earned ? material.main : '#BEB9AB';
   const diamond = tier === 'diamond' && earned;
@@ -21,9 +22,9 @@ const AchievementArtwork = ({ artwork, shape: medalShape, tier = 'gold', size = 
   const symbolColor = earned ? light : '#98988F';
   // Keep library paths in the medal's native SVG coordinate system. Nested
   // SvgXml roots lose their x/y placement and currentColor on native platforms.
-  const symbolMarkup = useMemo(() => symbol
+  const symbolMarkup = symbol
     ? symbol.replace(/currentColor/g, symbolColor).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')
-    : null, [symbol, symbolColor]);
+    : null;
   const frame = medalShape ?? defaultMedalShape(artwork);
   const shape = frame === 'circle'
     ? 'M100 17 A78 78 0 1 1 100 173 A78 78 0 1 1 100 17 Z'
@@ -94,4 +95,5 @@ const AchievementArtwork = ({ artwork, shape: medalShape, tier = 'gold', size = 
   </svg>;
 };
 
+const AchievementArtwork = (props: AchievementArtworkProps) => createAchievementArtwork({...props, id: useId().replace(/[^a-zA-Z0-9_-]/g, '')});
 export default React.memo(AchievementArtwork);

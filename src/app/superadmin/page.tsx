@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AchievementCatalogAdmin from '@/components/AchievementCatalogAdmin';
+import ReportCardsAdmin from '@/components/ReportCardsAdmin';
 import { supabase } from '@/lib/supabaseClient';
 import {
   Box,
@@ -447,9 +448,11 @@ export default function SuperadminPage() {
         <Tab label="Users" />
         <Tab label="Courses" />
         <Tab label="Achievements" />
+        <Tab label="Reports" />
       </Tabs>
 
       {selectedTab === 2 && <AchievementCatalogAdmin />}
+      {selectedTab === 3 && <ReportCardsAdmin users={users} courses={courses} />}
 
       {selectedTab === 0 && (
         <>

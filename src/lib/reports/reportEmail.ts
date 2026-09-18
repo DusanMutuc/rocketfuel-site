@@ -1,0 +1,20 @@
+import type {ReportSnapshot} from './reportTypes';
+import {reportTitle,reportDate} from './milestoneFormat';
+const esc=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+export function reportEmail(report:ReportSnapshot,site:string){
+ const origin=new URL(site);if(origin.protocol!=='https:'||origin.username||origin.password)throw new Error('REPORTS_SITE_URL must be a public HTTPS URL.');
+ const url=new URL(`/reports/${report.id}`,origin).href;const title=reportTitle(report.milestone);
+ return {subject:`Your Rocketfuel ${title.toLowerCase()} is ready`,html:`<!doctype html><html><body style="margin:0;background:#EAE7DF;font-family:Arial,sans-serif;color:#183552"><table role="presentation" style="width:100%;max-width:600px;margin:32px auto;border-collapse:collapse;background:#FAF8F3"><tr><td style="padding:32px;background:#153452;color:#FAF8F3"><p style="font-size:17px;font-weight:bold;letter-spacing:4px">ROCKETFUEL</p><h1 style="font-size:32px;margin:26px 0 8px">${esc(title)}</h1><p style="color:#d0d9e3">${esc(reportDate(report.period_start))} - ${esc(reportDate(report.period_end))}</p></td></tr><tr><td style="padding:32px"><p>Hi ${esc(report.member_name.split(' ')[0]||'there')},</p><p style="font-size:17px;line-height:1.6">Your report is ready. See your recorded activity, progress toward your goals, and achievements earned along the way.</p><p style="margin:30px 0"><a href="${esc(url)}" style="display:inline-block;padding:15px 24px;background:#153452;color:white;font-weight:bold;text-decoration:none;border-radius:4px">View your report</a></p><p style="font-size:13px;line-height:1.6;color:#687075">Open it in Rocketfuel, or sign in on the web. You can download a PDF to keep from your report.</p></td></tr></table></body></html>`};
+}
+export class ReportEmailFailure extends Error {constructor(message:string,public outcome:'failed'|'unknown'){super(message);}}
+/** Dedicated notification sender: the final POST is never automatically retried. */
+export async function sendReportEmail(input:{email:string;name:string;html:string;subject:string},request:typeof fetch=fetch){
+ const token=process.env.GHL_PRIVATE_INTEGRATION_TOKEN?.trim(),locationId=process.env.GHL_LOCATION_ID?.trim(),emailFrom=process.env.GHL_EMAIL_FROM?.trim();
+ if(!token||!locationId||!emailFrom)throw new ReportEmailFailure('Report email provider is not configured.','failed');
+ const headers={Authorization:`Bearer ${token}`,Version:'2021-07-28','Content-Type':'application/json',Accept:'application/json'};
+ let contactId:string;try{const contact=await request('https://services.leadconnectorhq.com/contacts/upsert',{method:'POST',headers,signal:AbortSignal.timeout(15000),body:JSON.stringify({locationId,email:input.email,firstName:input.name.split(' ')[0],createNewIfDuplicateAllowed:false})});if(!contact.ok)throw new Error('Contact lookup failed');const body=await contact.json();if(!body.contact?.id)throw new Error('Contact unavailable');contactId=body.contact.id;}catch{throw new ReportEmailFailure('Report email contact could not be prepared.','failed');}
+ try{const response=await request('https://services.leadconnectorhq.com/conversations/messages',{method:'POST',headers:{...headers,Version:'2021-04-15'},signal:AbortSignal.timeout(20000),body:JSON.stringify({type:'Email',contactId,emailTo:input.email,emailFrom,html:input.html,subject:input.subject,status:'pending'})});
+ if(!response.ok)throw new ReportEmailFailure(`Report email provider returned HTTP ${response.status}.`,response.status>=400&&response.status<500&&response.status!==408?'failed':'unknown');
+ const body=await response.json();const id=body.messageId??body.emailMessageId;if(typeof id!=='string'||!id)throw new ReportEmailFailure('Provider accepted the request without a message ID.','unknown');return id;
+ }catch(error){if(error instanceof ReportEmailFailure)throw error;throw new ReportEmailFailure('Email delivery status could not be confirmed. Check the provider before retrying.','unknown');}
+}
