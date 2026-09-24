@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { safeReportReturn } from '@/lib/reports/milestoneFormat';
+import { getDashboardPath } from '@/lib/dashboardRouting';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   // Forgot password state
   const [showForgot, setShowForgot] = useState(false);
@@ -19,7 +21,26 @@ export default function LoginPage() {
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
 
-  const superadminEmails = process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';');
+  useEffect(() => {
+    let active = true;
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (session) {
+          const reportReturn = safeReportReturn(new URLSearchParams(window.location.search).get('next'));
+          const path = reportReturn ?? await getDashboardPath(session.user);
+          if (active) router.replace(path);
+        }
+      } catch {
+        if (active) setErrorMsg('Could not load your dashboard. Please sign in again.');
+      } finally {
+        if (active) setCheckingSession(false);
+      }
+    };
+    checkSession();
+    return () => { active = false; };
+  }, [router]);
 
   const handleLogin = async () => {
     setErrorMsg('');
@@ -43,32 +64,14 @@ export default function LoginPage() {
       return;
     }
 
-    const reportReturn = safeReportReturn(new URLSearchParams(window.location.search).get('next'));
-    if (reportReturn) { router.replace(reportReturn); setLoading(false); return; }
-
-    if (user.email && superadminEmails?.includes(user.email)) {
-      router.push('/superadmin');
+    try {
+      const reportReturn = safeReportReturn(new URLSearchParams(window.location.search).get('next'));
+      router.replace(reportReturn ?? await getDashboardPath(user));
+    } catch {
+      setErrorMsg('Could not fetch user role. Please try again.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: roleData, error: roleError } = await supabase.rpc('get_user_role', {
-      user_id: user.id,
-    });
-
-    if (roleError || !roleData) {
-      setErrorMsg('Could not fetch user role.');
-      setLoading(false);
-      return;
-    }
-
-    if (roleData.role === 'admin') {
-      router.push('/admin-dashboard');
-    } else {
-      router.push('/dashboard');
-    }
-
-    setLoading(false);
   };
 
   const handleSendReset = async () => {
@@ -86,6 +89,8 @@ export default function LoginPage() {
 
     setForgotLoading(false);
   };
+
+  if (checkingSession) return <p>Loading...</p>;
 
   return (
     <div style={{ maxWidth: 400, margin: '100px auto', position: 'relative' }}>

@@ -6,6 +6,7 @@ import AchievementCatalogAdmin from '@/components/AchievementCatalogAdmin';
 import ReportCardsAdmin from '@/components/ReportCardsAdmin';
 import PushNotificationsAdmin from '@/components/PushNotificationsAdmin';
 import { supabase } from '@/lib/supabaseClient';
+import { getDashboardPath } from '@/lib/dashboardRouting';
 import {
   Box,
   Typography,
@@ -29,11 +30,9 @@ import {
   Alert,
 } from '@mui/material';
 
-const superadminEmails =
-  process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';') ?? [];
-
 export default function SuperadminPage() {
   const [user, setUser] = useState<any>(null);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [selectedTab, setSelectedTab] = useState(0);
@@ -81,15 +80,15 @@ export default function SuperadminPage() {
       if (error) console.error('Error fetching user:', error);
       setUser(user);
 
-      if (user?.email && superadminEmails.includes(user.email)) {
-        try {
+      try {
+        const allowed = !!user && await getDashboardPath(user) === '/superadmin';
+        setIsSuperadmin(allowed);
+        if (allowed) {
           await Promise.all([fetchProfiles(), fetchCourses()]);
-        } catch (err) {
-          console.error('Error in fetchProfiles or fetchCourses:', err);
-        } finally {
-          setLoading(false);
         }
-      } else {
+      } catch (err) {
+        console.error('Error loading superadmin page:', err);
+      } finally {
         setLoading(false);
       }
     };
@@ -423,7 +422,7 @@ export default function SuperadminPage() {
 
   if (loading) return <CircularProgress sx={{ m: 5 }} />;
 
-  if (!user || !user.email || !superadminEmails.includes(user.email)) {
+  if (!user || !isSuperadmin) {
     return (
       <Box m={5}>
         <Typography color="error">Access Denied</Typography>

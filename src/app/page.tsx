@@ -1,12 +1,13 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { getDashboardPath } from '@/lib/dashboardRouting';
 
 export default function Home() {
   const router = useRouter();
 
-  const superadminEmails = process.env.NEXT_PUBLIC_SUPERADMIN_EMAILS?.split(';');
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     const checkSession = async () => {
@@ -17,25 +18,13 @@ export default function Home() {
         return;
       }
 
-      if (session?.user.email && superadminEmails?.includes(session?.user.email)) {
-        router.push('/superadmin');
-        return;
-      }
-
-      const { data: roleData, error: roleError } = await supabase.rpc('get_user_role', {
-        user_id: session?.user.id,
-      });
-
-      if (roleData.role === 'admin') {
-        router.push('/admin-dashboard');
-        return;
-      }
-
-      router.push('/dashboard');
+      router.replace(await getDashboardPath(session.user));
     };
 
-    checkSession();
+    checkSession().catch(() => setErrorMsg('Could not load your dashboard. Please try again.'));
   }, [router]);
 
-  return null;
+  return errorMsg ? (
+    <p role="alert">{errorMsg} <a href="/">Retry</a></p>
+  ) : <p>Loading...</p>;
 }
