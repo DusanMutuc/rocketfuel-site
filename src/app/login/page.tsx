@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { safeReportReturn } from '@/lib/reports/milestoneFormat';
@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
 
   // Forgot password state
   const [showForgot, setShowForgot] = useState(false);
@@ -20,27 +19,6 @@ export default function LoginPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const checkSession = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (session) {
-          const reportReturn = safeReportReturn(new URLSearchParams(window.location.search).get('next'));
-          const path = reportReturn ?? await getDashboardPath(session.user);
-          if (active) router.replace(path);
-        }
-      } catch {
-        if (active) setErrorMsg('Could not load your dashboard. Please sign in again.');
-      } finally {
-        if (active) setCheckingSession(false);
-      }
-    };
-    checkSession();
-    return () => { active = false; };
-  }, [router]);
 
   const handleLogin = async () => {
     setErrorMsg('');
@@ -89,8 +67,6 @@ export default function LoginPage() {
 
     setForgotLoading(false);
   };
-
-  if (checkingSession) return <p>Loading...</p>;
 
   return (
     <div style={{ maxWidth: 400, margin: '100px auto', position: 'relative' }}>
