@@ -351,6 +351,59 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
     setEditModalOpen(false);
   };
 
+  const downloadCsvFromEndpoint = async (
+    endpoint: string,
+    fallbackName: string,
+    accessToken: string
+  ) => {
+    const response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed export for ${fallbackName}`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fallbackName}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportAllData = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSnackbarMessage('You need to be logged in to export data.');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    try {
+      const query = new URLSearchParams();
+      if (effectiveCourseId) query.set('course_id', effectiveCourseId);
+      const kpiEndpoint = `/api/exports/kpis-csv?${query.toString()}`;
+
+      await downloadCsvFromEndpoint('/api/exports/contacts-csv', 'contacts-export', session.access_token);
+      await downloadCsvFromEndpoint('/api/exports/pipeline-csv', 'pipeline-15-30-export', session.access_token);
+      await downloadCsvFromEndpoint(kpiEndpoint, 'kpis-export', session.access_token);
+      setSnackbarMessage('Data export started: contacts, pipeline, and KPIs.');
+    } catch (error) {
+      console.error(error);
+      setSnackbarMessage('Failed to export all data.');
+    }
+    setSnackbarOpen(true);
+  };
+
   if (loading || !goals) return <p>Loading...</p>;
 
   const currentWeek = weeklyData.find((w) => w.week_start === selectedWeekStart);
@@ -366,9 +419,14 @@ export default function UserDetailView({ userId, courseId, disableRedirect }: Pr
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
-      <Typography variant="h4" fontWeight={600} gutterBottom>
-        Your Progress Overview
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center', mb: 1 }}>
+        <Typography variant="h4" fontWeight={600} gutterBottom>
+          Your Progress Overview
+        </Typography>
+        <Button variant="outlined" onClick={handleExportAllData} sx={{ textTransform: 'none' }}>
+          Export Data
+        </Button>
+      </Box>
 
       <FormControl sx={{ minWidth: 160, mb: 3 }} size="small">
         <InputLabel id="week-select-label">Week</InputLabel>
